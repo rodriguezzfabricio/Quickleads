@@ -5,9 +5,11 @@ export type LeadStatus = 'call-back-now' | 'estimate-sent' | 'won' | 'cold';
 export interface PreviousProject {
   id: string;
   jobType: JobType | string;
+  startedAt?: Date;
   completedAt: Date;
   status: 'completed' | 'cancelled';
   notes?: string;
+  photos?: string[];
 }
 
 export type JobStatus = 'on-track' | 'needs-attention' | 'behind';

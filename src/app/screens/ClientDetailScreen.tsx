@@ -19,37 +19,86 @@ import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 
 function ProjectRow({ project }: { project: PreviousProject }) {
+    const [isExpanded, setIsExpanded] = useState(false);
     const isCompleted = project.status === 'completed';
+
     return (
-        <div className="flex items-start gap-3 py-3">
-            <div className="mt-0.5 flex-shrink-0">
-                {isCompleted ? (
-                    <CheckCircle2 className="w-4 h-4 text-system-green" />
-                ) : (
-                    <XCircle className="w-4 h-4 text-muted-foreground" />
-                )}
-            </div>
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                    <span className="text-[15px] font-medium text-foreground">{project.jobType}</span>
-                    <span
-                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${isCompleted
-                                ? 'bg-system-green/15 text-system-green'
-                                : 'bg-muted-foreground/15 text-muted-foreground'
-                            }`}
-                    >
-                        {isCompleted ? 'Completed' : 'Cancelled'}
-                    </span>
+        <div className="py-3">
+            <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="w-full flex items-start gap-3 text-left active:opacity-70 transition-opacity"
+            >
+                <div className="mt-0.5 flex-shrink-0">
+                    {isCompleted ? (
+                        <CheckCircle2 className="w-4 h-4 text-system-green" />
+                    ) : (
+                        <XCircle className="w-4 h-4 text-muted-foreground" />
+                    )}
                 </div>
-                <p className="text-[13px] text-muted-foreground mt-0.5">
-                    {format(project.completedAt, 'MMM d, yyyy')}
-                </p>
-                {project.notes && (
-                    <p className="text-[13px] text-muted-foreground/70 mt-1 leading-snug line-clamp-2">
-                        {project.notes}
-                    </p>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-[15px] font-medium text-foreground">{project.jobType}</span>
+                        <div className="flex items-center gap-2">
+                            <span
+                                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${isCompleted
+                                    ? 'bg-system-green/15 text-system-green'
+                                    : 'bg-muted-foreground/15 text-muted-foreground'
+                                    }`}
+                            >
+                                {isCompleted ? 'Completed' : 'Cancelled'}
+                            </span>
+                            {isExpanded ? (
+                                <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                            ) : (
+                                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                            )}
+                        </div>
+                    </div>
+                    {isExpanded ? (
+                        <div className="mt-2 text-[13px] text-muted-foreground space-y-1">
+                            {project.startedAt && (
+                                <p>Started: {format(project.startedAt, 'MMM d, yyyy')}</p>
+                            )}
+                            <p>Completed: {format(project.completedAt, 'MMM d, yyyy')}</p>
+                            {project.notes && (
+                                <p className="mt-2 text-foreground/80 leading-snug">{project.notes}</p>
+                            )}
+                        </div>
+                    ) : (
+                        <>
+                            <p className="text-[13px] text-muted-foreground mt-0.5">
+                                {format(project.completedAt, 'MMM d, yyyy')}
+                            </p>
+                            {project.notes && (
+                                <p className="text-[13px] text-muted-foreground/70 mt-1 leading-snug line-clamp-2">
+                                    {project.notes}
+                                </p>
+                            )}
+                        </>
+                    )}
+                </div>
+            </button>
+            <AnimatePresence>
+                {isExpanded && project.photos && project.photos.length > 0 && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mt-3 pl-7 overflow-hidden"
+                    >
+                        <div className="flex gap-2 overflow-x-auto pb-2 snap-x hide-scrollbar">
+                            {project.photos.map((photo, i) => (
+                                <img
+                                    key={i}
+                                    src={photo}
+                                    alt={`Project preview ${i + 1}`}
+                                    className="h-24 w-24 object-cover rounded-xl flex-shrink-0 snap-center border border-white/10"
+                                />
+                            ))}
+                        </div>
+                    </motion.div>
                 )}
-            </div>
+            </AnimatePresence>
         </div>
     );
 }

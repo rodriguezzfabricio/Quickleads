@@ -72,16 +72,25 @@ export const mockLeads: Lead[] = [
       {
         id: 'pp-5a',
         jobType: 'Kitchen',
+        startedAt: new Date(2024, 3, 10),
         completedAt: new Date(2024, 4, 20),
         status: 'completed',
         notes: 'Full kitchen remodel, granite countertops and new cabinets.',
+        photos: [
+          'https://images.unsplash.com/photo-1556910103-1c02745a872f?auto=format&fit=crop&q=80&w=400',
+          'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&q=80&w=400'
+        ],
       },
       {
         id: 'pp-5b',
         jobType: 'Deck',
+        startedAt: new Date(2023, 5, 20),
         completedAt: new Date(2023, 6, 3),
         status: 'completed',
         notes: 'Composite deck, 400 sq ft with built-in lighting.',
+        photos: [
+          'https://images.unsplash.com/photo-1585827367800-47b744d21278?auto=format&fit=crop&q=80&w=400'
+        ]
       },
     ],
   },
@@ -195,16 +204,24 @@ export const mockClients: Client[] = [
       {
         id: 'pp-c1a',
         jobType: 'Kitchen',
+        startedAt: new Date(2026, 0, 15),
         completedAt: new Date(2026, 2, 15),
         status: 'completed',
         notes: 'Full kitchen remodel with granite countertops.',
+        photos: [
+          'https://images.unsplash.com/photo-1556910103-1c02745a872f?auto=format&fit=crop&q=80&w=400'
+        ]
       },
       {
         id: 'pp-c1b',
         jobType: 'Bathroom',
+        startedAt: new Date(2025, 8, 10),
         completedAt: new Date(2025, 9, 3),
         status: 'completed',
         notes: 'Master bath renovation.',
+        photos: [
+          'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=400'
+        ]
       },
     ],
   },
