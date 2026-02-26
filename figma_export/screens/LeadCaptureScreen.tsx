@@ -1,40 +1,44 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
-import { ChevronLeft, Mic } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router';
+import { ChevronLeft, SendHorizonal } from 'lucide-react';
 import { JobType } from '../types';
 import { motion } from 'motion/react';
+import { useLeads } from '../state/LeadsContext';
 
 const jobTypes: JobType[] = ['Deck', 'Kitchen', 'Bathroom', 'Roof', 'Fence', 'Basement', 'Addition', 'Painting', 'Concrete', 'Other'];
 
 export function LeadCaptureScreen() {
   const navigate = useNavigate();
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const { createLead } = useLeads();
+  const [searchParams] = useSearchParams();
+  const prefillName = searchParams.get('name') || '';
+  const prefillPhone = searchParams.get('phone') || '';
+  const [name, setName] = useState(prefillName);
+  const [phone, setPhone] = useState(prefillPhone);
   const [jobType, setJobType] = useState<JobType | string>('');
-  const [showQuickText, setShowQuickText] = useState(false);
   const [quickText, setQuickText] = useState('');
   const [otherJobType, setOtherJobType] = useState('');
 
-  const handleSave = () => { navigate('/'); };
-  const canSave = name.trim() && phone.trim() && (jobType !== 'Other' ? jobType : otherJobType.trim());
+  const structuredJobType = jobType === 'Other' ? otherJobType : jobType;
+  const hasStructuredInput = name.trim() && phone.trim() && structuredJobType.trim();
+  const hasQuickTextInput = quickText.trim().length > 0;
+  const canSave = hasStructuredInput || hasQuickTextInput;
 
-  if (showQuickText) {
-    return (
-      <div className="min-h-screen bg-background px-5 pt-14">
-        <div className="max-w-[600px] mx-auto">
-          <button onClick={() => setShowQuickText(false)} className="mb-6 text-system-blue flex items-center gap-0.5 -ml-1">
-            <ChevronLeft className="w-5 h-5" /><span className="text-[17px]">Back</span>
-          </button>
-          <h1 className="text-[34px] font-bold mb-2 text-foreground tracking-tight">Quick Capture</h1>
-          <p className="text-muted-foreground text-[15px] mb-6">Type it like a text. We'll sort it out.</p>
-          <textarea value={quickText} onChange={(e) => setQuickText(e.target.value)} placeholder='e.g., John 301-555-2847 deck' className="w-full h-40 text-[17px] p-4 glass-elevated rounded-2xl resize-none focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground" autoFocus />
-          <motion.button whileTap={{ scale: 0.97 }} onClick={handleSave} disabled={!quickText.trim()} className="w-full bg-system-blue text-white py-4 rounded-2xl text-[17px] font-semibold mt-4 disabled:opacity-40">
-            Save Lead
-          </motion.button>
-        </div>
-      </div>
-    );
-  }
+  const handleSave = () => {
+    if (hasQuickTextInput) {
+      // Quick text is intentionally saved raw for later parsing/review.
+      createLead({ quickCaptureText: quickText });
+      navigate('/leads');
+      return;
+    }
+    if (!hasStructuredInput) return;
+    createLead({
+      name,
+      phone,
+      jobType: structuredJobType,
+    });
+    navigate('/leads');
+  };
 
   return (
     <div className="min-h-screen bg-background px-5 pt-14">
@@ -42,8 +46,11 @@ export function LeadCaptureScreen() {
         <button onClick={() => navigate('/')} className="mb-6 text-system-blue flex items-center gap-0.5 -ml-1">
           <ChevronLeft className="w-5 h-5" /><span className="text-[17px]">Cancel</span>
         </button>
-        <motion.h1 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="text-[34px] font-bold mb-8 text-foreground tracking-tight">New Lead</motion.h1>
+        <motion.h1 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="text-[34px] font-bold mb-8 text-foreground tracking-tight">
+          New Lead
+        </motion.h1>
 
+        {/* Structured fields remain primary for most users. */}
         <div className="space-y-4 mb-6">
           <div>
             <label className="block text-[11px] text-muted-foreground mb-1 uppercase tracking-wider">Name</label>
@@ -68,9 +75,28 @@ export function LeadCaptureScreen() {
           <input type="text" value={otherJobType} onChange={(e) => setOtherJobType(e.target.value)} placeholder="Describe..." className="w-full text-[17px] p-4 glass-elevated rounded-2xl focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground mb-4" />
         )}
 
-        <button onClick={() => setShowQuickText(true)} className="w-full glass-elevated rounded-2xl p-4 mb-6 flex items-center justify-center gap-2">
-          <Mic className="w-5 h-5 text-system-blue" /><span className="text-foreground font-medium text-[15px]">Or just text it</span>
-        </button>
+        <div className="flex items-center gap-3 my-6">
+          <div className="h-px flex-1 bg-white/[0.08]" />
+          <span className="text-[12px] text-muted-foreground uppercase tracking-wider">OR</span>
+          <div className="h-px flex-1 bg-white/[0.08]" />
+        </div>
+
+        {/* Quick-entry box stays visible as the fallback path for speed. */}
+        <div className="mb-6">
+          <label className="block text-[11px] text-muted-foreground mb-1 uppercase tracking-wider">
+            Quick Text
+          </label>
+          <div className="relative">
+            <textarea
+              value={quickText}
+              onChange={(e) => setQuickText(e.target.value)}
+              placeholder="Or just type it: 'John 301-555-2847 deck rebuild'"
+              rows={3}
+              className="w-full text-[17px] p-4 pr-12 glass-elevated rounded-[22px] resize-none focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground"
+            />
+            <SendHorizonal className="w-5 h-5 text-system-blue/80 absolute right-4 bottom-4" />
+          </div>
+        </div>
 
         <motion.button whileTap={{ scale: 0.97 }} onClick={handleSave} disabled={!canSave} className="w-full bg-system-blue text-white py-4 rounded-2xl text-[17px] font-semibold disabled:opacity-40">
           Save Lead

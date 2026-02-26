@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ChevronLeft, Phone, Camera, Plus } from 'lucide-react';
-import { mockJobs } from '../data/mockData';
 import { JobPhase, JobStatus } from '../types';
 import { PhaseProgress } from '../components/PhaseProgress';
 import { format } from 'date-fns';
 import { motion } from 'motion/react';
+import { useLeads } from '../state/LeadsContext';
+import { useInlineSavedIndicator } from '../hooks/useInlineSavedIndicator';
+import { InlineSavedIndicator } from '../components/InlineSavedIndicator';
 
 const statusOptions: { value: JobStatus; label: string }[] = [
   { value: 'on-track', label: 'On Track' },
@@ -16,16 +18,24 @@ const statusOptions: { value: JobStatus; label: string }[] = [
 export function JobDetailScreen() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const job = mockJobs.find(j => j.id === id);
+  const { jobs } = useLeads();
+  const job = jobs.find(j => j.id === id);
   const [currentPhase, setCurrentPhase] = useState(job?.currentPhase || 'demo');
   const [status, setStatus] = useState(job?.status || 'on-track');
   const [estimatedCompletion, setEstimatedCompletion] = useState(job?.estimatedCompletion ? format(job.estimatedCompletion, 'yyyy-MM-dd') : '');
   const [notes, setNotes] = useState(job?.notes || '');
   const [newNote, setNewNote] = useState('');
+  const { showSaved, isFieldSaved } = useInlineSavedIndicator();
 
   if (!job) return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-muted-foreground">Job not found</p></div>;
 
-  const handleAddNote = () => { if (newNote.trim()) { setNotes(notes ? `${newNote}\n\n---\n\n${notes}` : newNote); setNewNote(''); } };
+  const handleAddNote = () => {
+    if (newNote.trim()) {
+      setNotes(notes ? `${newNote}\n\n---\n\n${notes}` : newNote);
+      setNewNote('');
+      showSaved('notes');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -41,19 +51,28 @@ export function JobDetailScreen() {
         <div className="px-5 space-y-4 pt-2">
           {/* Phase */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-elevated rounded-2xl p-4">
-            <label className="block text-[11px] text-muted-foreground mb-3 uppercase tracking-wider">Phase</label>
-            <PhaseProgress currentPhase={currentPhase} interactive onPhaseSelect={(p: JobPhase) => setCurrentPhase(p)} />
+            <div className="mb-3 flex items-center justify-between">
+              <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">Phase</label>
+              <InlineSavedIndicator visible={isFieldSaved('phase')} />
+            </div>
+            <PhaseProgress currentPhase={currentPhase} interactive onPhaseSelect={(p: JobPhase) => { setCurrentPhase(p); showSaved('phase'); }} />
           </motion.div>
 
           {/* Completion + Status */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-elevated rounded-2xl overflow-hidden divide-y divide-white/[0.04]">
             <div className="p-4">
-              <label className="block text-[11px] text-muted-foreground mb-1 uppercase tracking-wider">Est. Completion</label>
-              <input type="date" value={estimatedCompletion} onChange={(e) => setEstimatedCompletion(e.target.value)} className="w-full bg-transparent text-[17px] text-foreground focus:outline-none cursor-pointer" />
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">Est. Completion</label>
+                <InlineSavedIndicator visible={isFieldSaved('estimatedCompletion')} />
+              </div>
+              <input type="date" value={estimatedCompletion} onChange={(e) => { setEstimatedCompletion(e.target.value); showSaved('estimatedCompletion'); }} className="w-full bg-transparent text-[17px] text-foreground focus:outline-none cursor-pointer" />
             </div>
             <div className="p-4">
-              <label className="block text-[11px] text-muted-foreground mb-1 uppercase tracking-wider">Status</label>
-              <select value={status} onChange={(e) => setStatus(e.target.value as JobStatus)} className="w-full bg-transparent text-[17px] text-foreground appearance-none focus:outline-none cursor-pointer">
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">Status</label>
+                <InlineSavedIndicator visible={isFieldSaved('status')} />
+              </div>
+              <select value={status} onChange={(e) => { setStatus(e.target.value as JobStatus); showSaved('status'); }} className="w-full bg-transparent text-[17px] text-foreground appearance-none focus:outline-none cursor-pointer">
                 {statusOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -72,7 +91,10 @@ export function JobDetailScreen() {
 
           {/* Notes */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <label className="block text-[11px] text-muted-foreground mb-3 uppercase tracking-wider">Notes</label>
+            <div className="mb-3 flex items-center justify-between">
+              <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">Notes</label>
+              <InlineSavedIndicator visible={isFieldSaved('notes')} />
+            </div>
             <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Add a note..." rows={3} className="w-full p-4 glass-elevated rounded-2xl resize-none focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground text-[17px] mb-2" />
             <button onClick={handleAddNote} disabled={!newNote.trim()} className="px-4 py-2 bg-system-blue text-white rounded-xl text-[13px] font-semibold disabled:opacity-40 flex items-center gap-1">
               <Plus className="w-3.5 h-3.5" />Add

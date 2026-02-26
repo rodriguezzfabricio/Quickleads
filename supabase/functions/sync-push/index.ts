@@ -16,6 +16,7 @@ type ErrorCode =
   | "invalid_request"
   | "unauthorized"
   | "forbidden"
+  | "not_implemented"
   | "internal_error";
 
 interface ApiError {
@@ -208,19 +209,26 @@ Deno.serve(async (request: Request) => {
       throw new HttpError(403, "forbidden", "Device is not registered to the authenticated organization.");
     }
 
-    // TODO(PHASE-2-sync-write): Apply validated mutations and persist idempotency records in sync_mutations.
-    // TODO(PHASE-2-conflict-policy): Enforce server-authoritative conflict resolution for terminal lead states.
+    // --- SCAFFOLD-ONLY: no persistence logic yet ---
+    // TODO(PHASE-2-sync-write): Apply validated mutations per entity type, persist
+    //   idempotency records in sync_mutations with (organization_id, client_mutation_id).
+    // TODO(PHASE-2-conflict-policy): Enforce server-authoritative conflict resolution
+    //   for terminal lead states (won/cold cannot revert to earlier pipeline stages).
+    // TODO(PHASE-2-sync-write): On success, return 200 with SyncPushData including
+    //   applied mutation IDs, conflicts, and stable server_cursor.
 
-    return jsonResponse({
-      ok: true,
-      data: {
-        organization_id: auth.organizationId,
-        received_mutations: payload.mutations.length,
-        applied: [],
-        conflicts: [],
-        server_cursor: new Date().toISOString(),
+    return jsonResponse(
+      {
+        ok: false,
+        error: {
+          code: "not_implemented",
+          message:
+            "sync-push is scaffold-only and not production-ready. " +
+            "Auth and validation passed but no mutations were applied.",
+        },
       },
-    });
+      501,
+    );
   } catch (error) {
     const mappedError = mapError(error);
     return jsonResponse(mappedError.body, mappedError.status);
