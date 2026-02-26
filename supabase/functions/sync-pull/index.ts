@@ -6,6 +6,7 @@ type ErrorCode =
   | "invalid_request"
   | "unauthorized"
   | "forbidden"
+  | "not_implemented"
   | "internal_error";
 
 interface ApiError {
@@ -158,20 +159,26 @@ Deno.serve(async (request: Request) => {
       }
     }
 
-    // TODO(PHASE-2-sync-read): Query tenant-scoped table deltas since cursor with deterministic ordering.
-    // TODO(PHASE-2-sync-pagination): Return paginated change batches and stable next cursor semantics.
+    // --- SCAFFOLD-ONLY: no persistence logic yet ---
+    // TODO(PHASE-2-sync-read): Query tenant-scoped table deltas since cursor
+    //   with deterministic ordering (updated_at, id).
+    // TODO(PHASE-2-sync-pagination): Return paginated change batches with stable
+    //   next_cursor and has_more semantics capped at requested limit.
+    // TODO(PHASE-2-sync-read): On success, return 200 with SyncPullData including
+    //   changes array and pagination metadata.
 
-    return jsonResponse({
-      ok: true,
-      data: {
-        organization_id: auth.organizationId,
-        requested_cursor: payload.cursor ?? null,
-        next_cursor: new Date().toISOString(),
-        limit: payload.limit,
-        changes: [],
-        has_more: false,
+    return jsonResponse(
+      {
+        ok: false,
+        error: {
+          code: "not_implemented",
+          message:
+            "sync-pull is scaffold-only and not production-ready. " +
+            "Auth and validation passed but no changes were queried.",
+        },
       },
-    });
+      501,
+    );
   } catch (error) {
     const mappedError = mapError(error);
     return jsonResponse(mappedError.body, mappedError.status);
