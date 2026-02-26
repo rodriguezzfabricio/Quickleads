@@ -47,3 +47,13 @@ This baseline covers the initial backend foundation for Supabase schema and Edge
 - TODO(PHASE-1-auth-hardening): Add privileged service-role path for onboarding/invite workflows.
 - TODO(PHASE-2-rate-limit): Add endpoint-level throttling and abuse controls.
 - TODO(PHASE-3-provider-secrets): Configure Twilio/Resend/FCM secret management and rotation runbook.
+
+## Role Hardening Update
+
+- Added role-focused RLS helper functions for owner/manager checks.
+- Tightened delete policies on `leads`, `jobs`, and `message_templates` so only owner/manager can delete.
+- Tightened delete on `imports` so owner/manager can delete any import, while members can delete only imports they uploaded.
+- Tightened delete on `notifications` so owner/manager can delete any notification, while members can delete only notifications targeted to their own profile.
+- Read policies were left unchanged to preserve normal member workflows.
+
+Rationale: the original member-wide delete permissions allowed broad destructive actions across organization data. This update applies least privilege while preserving day-to-day read paths and user-facing self-service cleanup cases.
