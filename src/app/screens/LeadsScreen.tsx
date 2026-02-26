@@ -58,8 +58,8 @@ export function LeadsScreen() {
               key={f.key}
               onClick={() => { setSelectedStatus(f.key); setExpandedId(null); }}
               className={`flex-1 py-[7px] rounded-[10px] text-[13px] font-medium transition-all duration-300 ${selectedStatus === f.key
-                  ? 'glass-prominent text-foreground shadow-sm'
-                  : 'text-muted-foreground active:text-foreground/80'
+                ? 'glass-prominent text-foreground shadow-sm'
+                : 'text-muted-foreground active:text-foreground/80'
                 }`}
             >
               {f.label}

@@ -87,7 +87,7 @@ export function LeadActionCard({ lead, onClick, variant = 'urgent' }: LeadAction
               {/* Follow-up progress bar */}
               <div className="glass rounded-xl p-3 mb-3">
                 <div className="flex items-center gap-1.5 mb-2">
-                  {[lead.followUpSequence.day2Sent, lead.followUpSequence.day5Sent, lead.followUpSequence.day10Sent].map((sent, i) => (
+                  {[lead.followUpSequence?.day2Sent, lead.followUpSequence?.day5Sent, lead.followUpSequence?.day10Sent].map((sent, i) => (
                     <div key={i} className="flex-1 flex items-center gap-1">
                       <motion.div
                         initial={{ scaleX: 0 }}

@@ -253,8 +253,14 @@ export function ClientDetailScreen() {
                             </span>
                         </div>
                         {client.previousProjects.length === 0 ? (
-                            <div className="px-4 pb-4 pt-2">
-                                <p className="text-[15px] text-muted-foreground/60 italic">No previous projects yet</p>
+                            <div className="px-4 pb-6 pt-4 text-center">
+                                <div className="w-12 h-12 rounded-full bg-white/[0.03] flex items-center justify-center mx-auto mb-3">
+                                    <Briefcase className="w-6 h-6 text-muted-foreground/50" />
+                                </div>
+                                <h3 className="text-[15px] font-semibold text-foreground mb-1">No Project History</h3>
+                                <p className="text-[13px] text-muted-foreground leading-relaxed max-w-[200px] mx-auto">
+                                    When you complete jobs for this client, they'll show up here.
+                                </p>
                             </div>
                         ) : (
                             <div className="px-4 pb-2 divide-y divide-white/[0.04]">

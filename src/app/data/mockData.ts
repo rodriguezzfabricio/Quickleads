@@ -264,4 +264,11 @@ export const mockClients: Client[] = [
       },
     ],
   },
+  {
+    id: 'c4',
+    name: 'Sarah Connor',
+    phone: '555-123-4567',
+    createdAt: new Date(),
+    previousProjects: [],
+  },
 ];
