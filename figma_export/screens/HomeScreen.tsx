@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Settings, TrendingUp, Users, Briefcase, Trophy } from 'lucide-react';
+import { Settings, TrendingUp, Users, Briefcase, Trophy, X } from 'lucide-react';
 import { LeadActionCard } from '../components/LeadActionCard';
 import { JobCard } from '../components/JobCard';
-import { mockLeads, mockJobs } from '../data/mockData';
 import { LeadStatus } from '../types';
 import { motion } from 'motion/react';
+import { useLeads } from '../state/LeadsContext';
 
 export function HomeScreen() {
   const navigate = useNavigate();
-  const [leads] = useState(mockLeads);
-  const [jobs] = useState(mockJobs);
+  const { leads, jobs, wonLeadsWithoutProject, markEstimateSent } = useLeads();
+  const [dismissedWonReminder, setDismissedWonReminder] = useState(false);
 
   const urgentLeads = leads.filter(l => l.status === 'call-back-now');
   const followingUpLeads = leads.filter(l => l.status === 'estimate-sent' && l.followUpSequence?.active);
@@ -20,6 +20,15 @@ export function HomeScreen() {
   const handleJobClick = (jobId: string) => navigate(`/jobs/${jobId}`);
   const handleLeadClick = (leadId: string) => navigate(`/leads/${leadId}`);
   const handleFilterClick = (status: LeadStatus) => navigate(`/leads?status=${status}`);
+  const showWonReminder = wonLeadsWithoutProject.length > 0 && !dismissedWonReminder;
+
+  const handleWonReminderClick = () => {
+    if (wonLeadsWithoutProject.length === 1) {
+      navigate(`/leads/${wonLeadsWithoutProject[0].id}`);
+      return;
+    }
+    navigate('/leads?status=won');
+  };
 
   return (
     <div className="pb-24 min-h-screen">
@@ -97,7 +106,13 @@ export function HomeScreen() {
             <div className="space-y-2">
               {urgentLeads.map((lead, i) => (
                 <motion.div key={lead.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 + i * 0.05 }}>
-                  <LeadActionCard lead={lead} variant="urgent" onClick={() => handleLeadClick(lead.id)} />
+                  <LeadActionCard
+                    lead={lead}
+                    variant="urgent"
+                    onClick={() => handleLeadClick(lead.id)}
+                    // This action starts the automated follow-up sequence from the card.
+                    onEstimateSent={markEstimateSent}
+                  />
                 </motion.div>
               ))}
             </div>
@@ -137,6 +152,39 @@ export function HomeScreen() {
           </button>
         )}
       </div>
+
+      {showWonReminder && (
+        <div className="px-5 mt-4">
+          <motion.div
+            whileTap={{ scale: 0.98 }}
+            onClick={handleWonReminderClick}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') handleWonReminderClick();
+            }}
+            className="w-full text-left bg-system-yellow/20 border border-system-yellow/30 rounded-2xl p-4 cursor-pointer"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <p className="text-[15px] text-system-yellow font-semibold">
+                  You have {wonLeadsWithoutProject.length} won lead{wonLeadsWithoutProject.length === 1 ? '' : 's'} without a project. Tap to set up.
+                </p>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // Dismiss for this session; it returns on next app open until resolved.
+                  setDismissedWonReminder(true);
+                }}
+                className="text-system-yellow/80 mt-0.5 active:opacity-70"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Jobs Section */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="px-5 pt-8 mt-6">
