@@ -1,5 +1,8 @@
 import 'package:go_router/go_router.dart';
 
+import '../../features/auth/magic_link_screen.dart';
+import '../../features/auth/sign_in_screen.dart';
+import '../../features/auth/sign_up_screen.dart';
 import '../../features/calls/daily_sweep_screen.dart';
 import '../../features/clients/client_detail_screen.dart';
 import '../../features/clients/clients_screen.dart';
@@ -12,11 +15,16 @@ import '../../features/jobs/jobs_screen.dart';
 import '../../features/leads/lead_capture_screen.dart';
 import '../../features/leads/lead_detail_screen.dart';
 import '../../features/leads/leads_screen.dart';
+import '../../features/onboarding/workspace_setup_screen.dart';
 import '../../features/projects/project_creation_screen.dart';
 import '../../features/settings/settings_screen.dart';
 
 class AppRoutes {
   static const home = '/';
+  static const signIn = '/sign-in';
+  static const signUp = '/sign-up';
+  static const magicLink = '/magic-link';
+  static const workspaceSetup = '/onboarding/workspace-setup';
   static const leads = '/leads';
   static const leadCapture = '/lead-capture';
   static const leadDetail = '/leads/:leadId';
@@ -38,6 +46,10 @@ class AppRouter {
     initialLocation: AppRoutes.home,
     routes: [
       GoRoute(path: AppRoutes.home, builder: (_, __) => const HomeScreen()),
+      GoRoute(path: AppRoutes.signIn, builder: (_, __) => const SignInScreen()),
+      GoRoute(path: AppRoutes.signUp, builder: (_, __) => const SignUpScreen()),
+      GoRoute(path: AppRoutes.magicLink, builder: (_, __) => const MagicLinkScreen()),
+      GoRoute(path: AppRoutes.workspaceSetup, builder: (_, __) => const WorkspaceSetupScreen()),
       GoRoute(path: AppRoutes.leads, builder: (_, __) => const LeadsScreen()),
       GoRoute(path: AppRoutes.leadCapture, builder: (_, __) => const LeadCaptureScreen()),
       GoRoute(
