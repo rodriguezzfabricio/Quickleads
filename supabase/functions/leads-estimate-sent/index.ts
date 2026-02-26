@@ -13,6 +13,7 @@ type ErrorCode =
   | "unauthorized"
   | "forbidden"
   | "not_found"
+  | "not_implemented"
   | "internal_error";
 
 interface ApiError {
@@ -151,20 +152,25 @@ Deno.serve(async (request: Request) => {
       throw new HttpError(404, "not_found", "Lead was not found in the authenticated organization.");
     }
 
-    const estimateSentAt = payload.estimate_sent_at ?? new Date().toISOString();
+    // --- SCAFFOLD-ONLY: no persistence logic yet ---
+    // TODO(PHASE-1-domain-transition): Persist lead status → "estimate-sent" and
+    //   estimate_sent_at timestamp with version-safe optimistic writes.
+    // TODO(PHASE-3-followup-scheduler): After status write succeeds, create
+    //   follow-up sequence row and enqueue day 2/5/10 messages via Twilio/Resend.
+    // TODO(PHASE-1-domain-transition): On success, return 200 with EstimateSentData.
 
-    // TODO(PHASE-1-domain-transition): Persist lead status and estimate timestamp with version-safe writes.
-    // TODO(PHASE-3-followup-scheduler): Create follow-up sequence and queued day 2/5/10 follow-up messages.
-
-    return jsonResponse({
-      ok: true,
-      data: {
-        lead_id: payload.lead_id,
-        organization_id: auth.organizationId,
-        estimate_sent_at: estimateSentAt,
-        accepted: true,
+    return jsonResponse(
+      {
+        ok: false,
+        error: {
+          code: "not_implemented",
+          message:
+            "leads-estimate-sent is scaffold-only and not production-ready. " +
+            "Auth and validation passed but no data was persisted.",
+        },
       },
-    });
+      501,
+    );
   } catch (error) {
     const mappedError = mapError(error);
     return jsonResponse(mappedError.body, mappedError.status);

@@ -12,7 +12,7 @@ See: planning/PROJECT.md (updated 2026-02-26)
 Phase: 0 of 6 (7 total phases, currently Architecture & Setup)
 Plan: 4 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-26 - Completed Phase 0 UX parity docs and Flutter UI scaffolds (00-04)
+Last activity: 2026-02-25 - Fixed false-positive 200 OK responses in scaffold edge functions (leads-estimate-sent, sync-push, sync-pull) → now return 501 not_implemented
 
 Progress: [##########] 100%
 
@@ -53,6 +53,13 @@ Recent decisions affecting current work:
 
 - Flutter SDK is not installed in this environment, so scaffold is file-structure-only for now
 - Supabase CLI is not installed in this environment, so local migration/function execution cannot be verified here
+- All three edge functions (leads-estimate-sent, sync-push, sync-pull) are scaffold-only stubs returning 501; real persistence logic is blocked on Phase 1 (domain transitions) and Phase 2 (sync engine)
+
+### Next Backend Milestone
+
+- **Phase 1**: Implement lead status persistence in `leads-estimate-sent` (domain transition writes, optimistic versioning)
+- **Phase 2**: Implement sync-push mutation application and sync-pull delta queries with idempotency + conflict resolution
+- **Phase 3**: Wire follow-up scheduler (Twilio/Resend) into estimate-sent success path
 
 ## Session Continuity
 
