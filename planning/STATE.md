@@ -2,7 +2,7 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-26)
+See: planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** A contractor can capture a lead and never forget to follow up again.
 **Current focus:** Phase 0 - Architecture & Setup
@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-26)
 ## Current Position
 
 Phase: 0 of 6 (7 total phases, currently Architecture & Setup)
-Plan: 0 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-26 - Initialized GSD docs and created Phase 0 architecture context
+Last activity: 2026-02-26 - Completed Phase 0 backend schema + RLS baseline + edge function contract stubs
 
-Progress: [..........] 0%
+Progress: [#######...] 75%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: 0 min
-- Total execution time: 0.0 hours
+- Total plans completed: 3
+- Average duration: N/A (first tracked execution batch)
+- Total execution time: N/A (manual timing not captured)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 0 | 0 | 0 min | 0 min |
+| 0 | 3 | N/A | N/A |
 
 **Recent Trend:**
-- Last 5 plans: none
-- Trend: Stable
+- Last 5 plans: 00-01 completed, 00-02 completed, 00-03 completed
+- Trend: Improving
 
 ## Accumulated Context
 
@@ -46,14 +46,17 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- Phase 0 `00-04`: UX parity checklist from React reference screens `[BIZ-COFOUNDER]`
+- TODO(PHASE-1-runtime-tools): Install Flutter SDK to run native mobile commands in this environment.
+- TODO(PHASE-1-runtime-tools): Install Supabase CLI to run local migrations/functions workflows.
 
 ### Blockers/Concerns
 
 - Flutter SDK is not installed in this environment, so scaffold is file-structure-only for now
+- Supabase CLI is not installed in this environment, so local migration/function execution cannot be verified here
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Phase 0 architecture definition and scaffold setup
-Resume file: None
+Stopped at: Phase 0 backend technical foundation complete; waiting on 00-04 UX parity completion and runtime tooling install
+Resume file: planning/phases/00-architecture-setup/00-03-PLAN.md
