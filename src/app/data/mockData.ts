@@ -1,5 +1,5 @@
 // Mock data for development
-import { Lead, Job, AppSettings, Client } from '../types';
+import { Lead, Job, AppSettings, Client, UnknownCall } from '../types';
 
 export const mockLeads: Lead[] = [
   {
@@ -165,6 +165,30 @@ export const mockJobs: Job[] = [
     lastUpdated: new Date(2026, 1, 18),
     phone: '301-555-5555',
     notes: 'Final walkthrough scheduled for Friday.',
+  },
+];
+
+export const mockUnknownCalls: UnknownCall[] = [
+  {
+    id: 'call-1',
+    phone: '240-555-6671',
+    calledAt: new Date(2026, 1, 26, 14, 34),
+    durationSeconds: 252,
+    direction: 'incoming',
+  },
+  {
+    id: 'call-2',
+    phone: '301-555-9914',
+    calledAt: new Date(2026, 1, 26, 11, 12),
+    durationSeconds: 86,
+    direction: 'outgoing',
+  },
+  {
+    id: 'call-3',
+    phone: '443-555-1045',
+    calledAt: new Date(2026, 1, 26, 9, 48),
+    durationSeconds: 401,
+    direction: 'incoming',
   },
 ];
 

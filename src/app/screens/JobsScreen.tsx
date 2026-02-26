@@ -1,14 +1,14 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { JobCard } from '../components/JobCard';
-import { mockJobs } from '../data/mockData';
 import { motion } from 'motion/react';
+import { useLeads } from '../state/LeadsContext';
 
 type FilterOption = 'all' | 'needs-attention' | 'behind';
 
 export function JobsScreen() {
   const navigate = useNavigate();
-  const [jobs] = useState(mockJobs);
+  const { jobs } = useLeads();
   const [filter, setFilter] = useState<FilterOption>('all');
 
   const filteredJobs = useMemo(() => {

@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { LeadCard } from '../components/LeadCard';
-import { mockLeads } from '../data/mockData';
 import { LeadStatus } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus } from 'lucide-react';
+import { useLeads } from '../state/LeadsContext';
 
 const filters = [
   { key: 'all', label: 'All' },
@@ -18,7 +18,7 @@ export function LeadsScreen() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const statusFilter = (searchParams.get('status') as LeadStatus | null) || 'all';
-  const [leads] = useState(mockLeads);
+  const { leads, unknownCalls, markEstimateSent } = useLeads();
   const [selectedStatus, setSelectedStatus] = useState<LeadStatus | 'all'>(statusFilter);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -69,6 +69,17 @@ export function LeadsScreen() {
       </div>
 
       <div className="px-5 pt-3">
+        <motion.button
+          whileTap={{ scale: 0.98 }}
+          onClick={() => navigate('/daily-sweep-review')}
+          className="w-full mb-3 glass-elevated rounded-2xl p-3.5 text-left flex items-center justify-between"
+        >
+          <span className="text-[15px] font-medium text-foreground">Review Calls</span>
+          <span className="text-[13px] text-muted-foreground">
+            {unknownCalls.length} to review
+          </span>
+        </motion.button>
+
         {filteredLeads.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-muted-foreground text-[17px]">No leads found</p>
@@ -83,7 +94,12 @@ export function LeadsScreen() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.04 }}
               >
-                <LeadCard lead={lead} onClick={() => handleCardClick(lead.id)} />
+                <LeadCard
+                  lead={lead}
+                  onClick={() => handleCardClick(lead.id)}
+                  // Callback leads can trigger estimate-sent directly from the card.
+                  onEstimateSent={markEstimateSent}
+                />
 
                 {/* Expanded quick-actions */}
                 <AnimatePresence>

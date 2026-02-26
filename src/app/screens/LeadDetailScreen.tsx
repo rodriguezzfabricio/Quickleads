@@ -11,15 +11,20 @@ import {
   Briefcase,
   CheckCircle2,
   XCircle,
+  Trash2,
+  StopCircle,
 } from 'lucide-react';
-import { mockLeads } from '../data/mockData';
 import { LeadStatus, PreviousProject } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
+import { useLeads } from '../state/LeadsContext';
+import { EstimateSentConfirmDialog } from '../components/EstimateSentConfirmDialog';
+import { ActionConfirmDialog } from '../components/ActionConfirmDialog';
+import { useInlineSavedIndicator } from '../hooks/useInlineSavedIndicator';
+import { InlineSavedIndicator } from '../components/InlineSavedIndicator';
 
 const statusOptions: { value: LeadStatus; label: string }[] = [
   { value: 'call-back-now', label: 'New / Call Back' },
-  { value: 'estimate-sent', label: 'Estimate Sent' },
   { value: 'won', label: 'Won' },
   { value: 'cold', label: 'Cold' },
 ];
@@ -112,16 +117,32 @@ function ProjectRow({ project }: { project: PreviousProject }) {
 export function LeadDetailScreen() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const lead = mockLeads.find((l) => l.id === id);
+  const {
+    leads,
+    updateLeadStatus,
+    markEstimateSent,
+    markLeadWon,
+    pauseFollowUps,
+    stopFollowUps,
+    deleteLead,
+    markLeadCold,
+  } = useLeads();
+  const lead = leads.find((l) => l.id === id);
 
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(lead?.name || '');
   const [phone, setPhone] = useState(lead?.phone || '');
-  const [status, setStatus] = useState<LeadStatus>(lead?.status || 'call-back-now');
   const [showDetails, setShowDetails] = useState(false);
   const [notes, setNotes] = useState(lead?.notes || '');
   const [email, setEmail] = useState(lead?.email || '');
   const [address, setAddress] = useState(lead?.address || '');
+  const [showEstimateConfirm, setShowEstimateConfirm] = useState(false);
+  const [showWonCelebration, setShowWonCelebration] = useState(false);
+  const [showPauseConfirm, setShowPauseConfirm] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showColdConfirm, setShowColdConfirm] = useState(false);
+  const { showSaved, isFieldSaved } = useInlineSavedIndicator();
 
   if (!lead)
     return (
@@ -137,10 +158,52 @@ export function LeadDetailScreen() {
     window.location.href = `sms:${phone}`;
   };
   const handleNewProject = () => {
-    navigate(`/lead-capture?name=${encodeURIComponent(name)}&phone=${encodeURIComponent(phone)}`);
+    navigate(`/projects/new?leadId=${encodeURIComponent(lead.id)}`);
+  };
+  const handleStatusChange = (nextStatus: LeadStatus) => {
+    if (nextStatus === 'cold') {
+      // Marking cold stops monetized follow-ups, so it requires explicit confirmation.
+      setShowColdConfirm(true);
+      return;
+    }
+    // Keep status edits and pipeline cards in sync through shared state.
+    updateLeadStatus(lead.id, nextStatus);
+  };
+  const handleEstimateSentConfirm = () => {
+    markEstimateSent(lead.id);
+  };
+  const handleMarkAsWon = () => {
+    markLeadWon(lead.id);
+    setShowWonCelebration(true);
+  };
+  const handleSetupProjectNow = () => {
+    setShowWonCelebration(false);
+    navigate(`/projects/new?leadId=${encodeURIComponent(lead.id)}`);
+  };
+  const handleSetupProjectLater = () => {
+    setShowWonCelebration(false);
+    navigate('/leads');
+  };
+  const handlePauseFollowUps = () => {
+    pauseFollowUps(lead.id);
+  };
+  const handleStopFollowUps = () => {
+    stopFollowUps(lead.id);
+  };
+  const handleDeleteLead = () => {
+    deleteLead(lead.id);
+    navigate('/leads');
+  };
+  const handleConfirmMarkCold = () => {
+    markLeadCold(lead.id);
   };
 
   const previousProjects = lead.previousProjects ?? [];
+  const isCallBackLead = lead.status === 'call-back-now';
+  const isEstimateSentLead = lead.status === 'estimate-sent';
+  const filteredStatusOptions = isCallBackLead
+    ? statusOptions.filter((option) => option.value !== 'won')
+    : statusOptions;
 
   return (
     <div className="min-h-screen bg-background pb-28">
@@ -166,7 +229,10 @@ export function LeadDetailScreen() {
           {isEditing ? (
             <input
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                showSaved('name');
+              }}
               className="text-[34px] font-bold text-foreground tracking-tight bg-transparent w-full focus:outline-none border-b border-system-blue/50 pb-0.5"
               autoFocus
             />
@@ -180,6 +246,7 @@ export function LeadDetailScreen() {
               {name}
             </motion.h1>
           )}
+          <InlineSavedIndicator visible={isFieldSaved('name')} />
         </div>
 
         <div className="px-5 space-y-4 pt-2">
@@ -195,11 +262,15 @@ export function LeadDetailScreen() {
                 <Phone className="w-5 h-5 text-system-blue flex-shrink-0" />
                 <input
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    showSaved('phone');
+                  }}
                   type="tel"
                   placeholder="Phone number"
                   className="flex-1 bg-transparent text-[17px] text-foreground focus:outline-none placeholder:text-muted-foreground"
                 />
+                <InlineSavedIndicator visible={isFieldSaved('phone')} />
               </div>
             ) : (
               <button
@@ -286,17 +357,22 @@ export function LeadDetailScreen() {
               <label className="block text-[11px] text-muted-foreground mb-1 uppercase tracking-wider">
                 Status
               </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as LeadStatus)}
-                className="w-full bg-transparent text-[17px] text-foreground appearance-none focus:outline-none cursor-pointer"
-              >
-                {statusOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+              {lead.status === 'estimate-sent' ? (
+                // Estimate Sent is intentionally removed from the manual status dropdown.
+                <span className="text-[17px] text-system-orange font-medium">Estimate Sent</span>
+              ) : (
+                <select
+                  value={lead.status}
+                  onChange={(e) => handleStatusChange(e.target.value as LeadStatus)}
+                  className="w-full bg-transparent text-[17px] text-foreground appearance-none focus:outline-none cursor-pointer"
+                >
+                  {filteredStatusOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </motion.div>
 
@@ -310,10 +386,22 @@ export function LeadDetailScreen() {
             >
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-[15px] text-system-blue">Follow-up Active</h3>
-                <button className="text-system-blue text-[13px] font-medium flex items-center gap-1">
-                  <Pause className="w-3.5 h-3.5" />
-                  Pause
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowPauseConfirm(true)}
+                    className="text-system-blue text-[13px] font-medium flex items-center gap-1"
+                  >
+                    <Pause className="w-3.5 h-3.5" />
+                    Pause
+                  </button>
+                  <button
+                    onClick={() => setShowStopConfirm(true)}
+                    className="text-system-red text-[13px] font-medium flex items-center gap-1"
+                  >
+                    <StopCircle className="w-3.5 h-3.5" />
+                    Stop
+                  </button>
+                </div>
               </div>
               <div className="space-y-2 text-[15px]">
                 {[
@@ -378,25 +466,37 @@ export function LeadDetailScreen() {
                     },
                   ].map((f) => (
                     <div key={f.label}>
-                      <label className="block text-[11px] text-muted-foreground mb-1 uppercase tracking-wider">
-                        {f.label}
-                      </label>
+                      <div className="mb-1 flex items-center justify-between">
+                        <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">
+                          {f.label}
+                        </label>
+                        <InlineSavedIndicator visible={isFieldSaved(f.label.toLowerCase())} />
+                      </div>
                       <input
                         type={f.type}
                         value={f.val}
-                        onChange={(e) => f.set(e.target.value)}
+                        onChange={(e) => {
+                          f.set(e.target.value);
+                          showSaved(f.label.toLowerCase());
+                        }}
                         placeholder={f.ph}
                         className="w-full p-4 glass-elevated rounded-2xl focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground text-[17px]"
                       />
                     </div>
                   ))}
                   <div>
-                    <label className="block text-[11px] text-muted-foreground mb-1 uppercase tracking-wider">
-                      Notes
-                    </label>
+                    <div className="mb-1 flex items-center justify-between">
+                      <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">
+                        Notes
+                      </label>
+                      <InlineSavedIndicator visible={isFieldSaved('notes')} />
+                    </div>
                     <textarea
                       value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
+                      onChange={(e) => {
+                        setNotes(e.target.value);
+                        showSaved('notes');
+                      }}
                       placeholder="Add notes..."
                       rows={3}
                       className="w-full p-4 glass-elevated rounded-2xl resize-none focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground text-[17px]"
@@ -430,9 +530,122 @@ export function LeadDetailScreen() {
               <MessageSquare className="w-5 h-5" />
               Send Text
             </motion.button>
+
+            {isCallBackLead && (
+              // Callback leads use this dedicated action to start the paid automation workflow.
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowEstimateConfirm(true)}
+                className="w-full bg-system-yellow text-black py-4 rounded-2xl text-[17px] font-semibold"
+              >
+                Estimate Sent?
+              </motion.button>
+            )}
+
+            {isEstimateSentLead && (
+              // Only estimate-sent leads can be converted to won jobs.
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={handleMarkAsWon}
+                className="w-full bg-system-green text-white py-4 rounded-2xl text-[17px] font-semibold"
+              >
+                Mark as Won
+              </motion.button>
+            )}
+
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full text-system-red py-3 rounded-2xl text-[15px] font-medium border border-system-red/30 active:opacity-70"
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <Trash2 className="w-4 h-4" />
+                Delete Lead
+              </span>
+            </button>
           </motion.div>
         </div>
       </div>
+
+      <EstimateSentConfirmDialog
+        clientName={lead.name}
+        open={showEstimateConfirm}
+        onOpenChange={setShowEstimateConfirm}
+        onConfirm={handleEstimateSentConfirm}
+      />
+      <ActionConfirmDialog
+        open={showPauseConfirm}
+        onOpenChange={setShowPauseConfirm}
+        title={`Pause follow-ups for ${lead.name}?`}
+        description="You can resume anytime."
+        confirmLabel="Pause"
+        onConfirm={handlePauseFollowUps}
+      />
+      <ActionConfirmDialog
+        open={showStopConfirm}
+        onOpenChange={setShowStopConfirm}
+        title={`Stop all follow-ups for ${lead.name}?`}
+        description="This can't be undone."
+        confirmLabel="Stop"
+        destructive
+        onConfirm={handleStopFollowUps}
+      />
+      <ActionConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title={`Delete ${lead.name} from your leads?`}
+        description="This can't be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleDeleteLead}
+      />
+      <ActionConfirmDialog
+        open={showColdConfirm}
+        onOpenChange={setShowColdConfirm}
+        title={`Mark ${lead.name} as cold?`}
+        description="Follow-ups will stop."
+        confirmLabel="Confirm"
+        onConfirm={handleConfirmMarkCold}
+      />
+
+      <AnimatePresence>
+        {showWonCelebration && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 px-5 flex items-center justify-center"
+          >
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="w-full max-w-[420px] glass-elevated rounded-3xl p-6 text-center"
+            >
+              <div className="w-16 h-16 rounded-full bg-system-green/20 flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="w-9 h-9 text-system-green" />
+              </div>
+              <h2 className="text-[32px] font-bold text-foreground tracking-tight">Job Won! 🎉</h2>
+              <p className="text-[15px] text-muted-foreground mt-2 mb-6">
+                {lead.name} — {lead.jobType}
+              </p>
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={handleSetupProjectNow}
+                className="w-full bg-system-blue text-white py-4 rounded-2xl text-[17px] font-semibold"
+              >
+                Set Up Project →
+              </motion.button>
+              <button
+                onClick={handleSetupProjectLater}
+                className="mt-4 text-[15px] text-muted-foreground active:opacity-70"
+              >
+                I&apos;ll do this later
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

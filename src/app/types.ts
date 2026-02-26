@@ -27,6 +27,8 @@ export interface Lead {
   createdAt: Date;
   contactedAt?: Date;
   estimateSentAt?: Date;
+  /** Raw shorthand text captured when user uses quick-entry mode */
+  quickCaptureText?: string;
   notes?: string;
   email?: string;
   address?: string;
@@ -65,11 +67,21 @@ export interface Job {
   notes?: string;
   phone: string;
   photos?: string[];
+  /** The lead ID this job was created from, if any */
+  leadId?: string;
 }
 
 export interface FollowUpTemplate {
   day: number;
   message: string;
+}
+
+export interface UnknownCall {
+  id: string;
+  phone: string;
+  calledAt: Date;
+  durationSeconds?: number;
+  direction?: 'incoming' | 'outgoing';
 }
 
 export interface AppSettings {

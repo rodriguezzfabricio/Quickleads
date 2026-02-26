@@ -17,6 +17,8 @@ import { mockClients } from '../data/mockData';
 import { PreviousProject } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
+import { useInlineSavedIndicator } from '../hooks/useInlineSavedIndicator';
+import { InlineSavedIndicator } from '../components/InlineSavedIndicator';
 
 function ProjectRow({ project }: { project: PreviousProject }) {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -115,6 +117,7 @@ export function ClientDetailScreen() {
     const [notes, setNotes] = useState(client?.notes || '');
     const [email, setEmail] = useState(client?.email || '');
     const [address, setAddress] = useState(client?.address || '');
+    const { showSaved, isFieldSaved } = useInlineSavedIndicator();
 
     if (!client)
         return (
@@ -126,7 +129,7 @@ export function ClientDetailScreen() {
     const handleCallNow = () => { window.location.href = `tel:${phone}`; };
     const handleSendText = () => { window.location.href = `sms:${phone}`; };
     const handleNewProject = () => {
-        navigate(`/lead-capture?name=${encodeURIComponent(name)}&phone=${encodeURIComponent(phone)}`);
+        navigate(`/projects/new?name=${encodeURIComponent(name)}&phone=${encodeURIComponent(phone)}`);
     };
 
     return (
@@ -162,7 +165,10 @@ export function ClientDetailScreen() {
                             {isEditing ? (
                                 <input
                                     value={name}
-                                    onChange={(e) => setName(e.target.value)}
+                                    onChange={(e) => {
+                                        setName(e.target.value);
+                                        showSaved('name');
+                                    }}
                                     className="text-[28px] font-bold text-foreground tracking-tight bg-transparent w-full focus:outline-none border-b border-system-blue/50 pb-0.5"
                                     autoFocus
                                 />
@@ -179,6 +185,7 @@ export function ClientDetailScreen() {
                             <p className="text-muted-foreground text-[14px]">
                                 Client since {format(client.createdAt, 'MMM yyyy')}
                             </p>
+                            <InlineSavedIndicator visible={isFieldSaved('name')} />
                         </div>
                     </div>
                 </div>
@@ -197,10 +204,14 @@ export function ClientDetailScreen() {
                                 <Phone className="w-5 h-5 text-system-blue flex-shrink-0" />
                                 <input
                                     value={phone}
-                                    onChange={(e) => setPhone(e.target.value)}
+                                    onChange={(e) => {
+                                        setPhone(e.target.value);
+                                        showSaved('phone');
+                                    }}
                                     type="tel"
                                     className="flex-1 bg-transparent text-[17px] text-foreground focus:outline-none placeholder:text-muted-foreground"
                                 />
+                                <InlineSavedIndicator visible={isFieldSaved('phone')} />
                             </div>
                         ) : (
                             <button
@@ -319,25 +330,37 @@ export function ClientDetailScreen() {
                                         { label: 'Address', val: address, set: setAddress, type: 'text', ph: 'Address (optional)' },
                                     ].map((f) => (
                                         <div key={f.label}>
-                                            <label className="block text-[11px] text-muted-foreground mb-1 uppercase tracking-wider">
-                                                {f.label}
-                                            </label>
+                                            <div className="mb-1 flex items-center justify-between">
+                                                <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">
+                                                    {f.label}
+                                                </label>
+                                                <InlineSavedIndicator visible={isFieldSaved(f.label.toLowerCase())} />
+                                            </div>
                                             <input
                                                 type={f.type}
                                                 value={f.val}
-                                                onChange={(e) => f.set(e.target.value)}
+                                                onChange={(e) => {
+                                                    f.set(e.target.value);
+                                                    showSaved(f.label.toLowerCase());
+                                                }}
                                                 placeholder={f.ph}
                                                 className="w-full p-4 glass-elevated rounded-2xl focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground text-[17px]"
                                             />
                                         </div>
                                     ))}
                                     <div>
-                                        <label className="block text-[11px] text-muted-foreground mb-1 uppercase tracking-wider">
-                                            Notes
-                                        </label>
+                                        <div className="mb-1 flex items-center justify-between">
+                                            <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">
+                                                Notes
+                                            </label>
+                                            <InlineSavedIndicator visible={isFieldSaved('notes')} />
+                                        </div>
                                         <textarea
                                             value={notes}
-                                            onChange={(e) => setNotes(e.target.value)}
+                                            onChange={(e) => {
+                                                setNotes(e.target.value);
+                                                showSaved('notes');
+                                            }}
                                             placeholder="Add notes…"
                                             rows={3}
                                             className="w-full p-4 glass-elevated rounded-2xl resize-none focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground text-[17px]"

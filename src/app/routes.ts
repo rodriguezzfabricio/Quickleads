@@ -12,6 +12,8 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
 import { ClientDetailScreen } from './screens/ClientDetailScreen';
 import { AddClientScreen } from './screens/AddClientScreen';
+import { ProjectCreationScreen } from './screens/ProjectCreationScreen';
+import { DailySweepReviewScreen } from './screens/DailySweepReviewScreen';
 
 export const router = createBrowserRouter([
   {
@@ -31,6 +33,14 @@ export const router = createBrowserRouter([
   {
     path: '/lead-capture',
     Component: LeadCaptureScreen,
+  },
+  {
+    path: '/projects/new',
+    Component: ProjectCreationScreen,
+  },
+  {
+    path: '/daily-sweep-review',
+    Component: DailySweepReviewScreen,
   },
   {
     path: '/follow-up-settings',
