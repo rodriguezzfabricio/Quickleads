@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/storage/app_database.dart';
@@ -33,7 +34,12 @@ const _kJobTypes = [
 // ── LeadCaptureScreen ─────────────────────────────────────────────────────────
 
 class LeadCaptureScreen extends ConsumerStatefulWidget {
-  const LeadCaptureScreen({super.key});
+  const LeadCaptureScreen({
+    super.key,
+    this.initialPhone,
+  });
+
+  final String? initialPhone;
 
   @override
   ConsumerState<LeadCaptureScreen> createState() => _LeadCaptureScreenState();
@@ -57,6 +63,15 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
     _emailCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final initialPhone = widget.initialPhone?.trim();
+    if (initialPhone != null && initialPhone.isNotEmpty) {
+      _phoneCtrl.text = initialPhone;
+    }
   }
 
   Future<void> _save() async {
@@ -96,7 +111,7 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
     await ref.read(leadsDaoProvider).createLead(companion);
 
     if (mounted) {
-      Navigator.of(context).pop();
+      context.pop();
     }
   }
 

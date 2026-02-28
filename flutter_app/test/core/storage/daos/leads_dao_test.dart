@@ -72,10 +72,10 @@ void main() {
     test('updateLeadStatus updates status and queues sync', () async {
       await leadsDao.createLead(makeLead(id: 'lead-3'));
 
-      await leadsDao.updateLeadStatus('lead-3', 'quoted', 1);
+      await leadsDao.updateLeadStatus('lead-3', 'estimate_sent', 1);
 
       final lead = await leadsDao.getLeadById('lead-3');
-      expect(lead!.status, 'quoted');
+      expect(lead!.status, 'estimate_sent');
       expect(lead.version, 2);
       expect(lead.needsSync, true);
 
@@ -83,12 +83,47 @@ void main() {
       final actions = await db.select(db.pendingSyncActions).get();
       expect(actions, hasLength(2));
       final statusAction = actions.last;
-      expect(statusAction.mutationType, 'status_transition');
+      expect(statusAction.mutationType, 'update');
       expect(statusAction.baseVersion, 1);
 
       final payload = jsonDecode(statusAction.payload) as Map<String, dynamic>;
       expect(payload['id'], 'lead-3');
       expect(payload['status'], 'estimate_sent');
+      expect(payload['version'], 2);
+    });
+
+    test('updateLeadStatus canonicalizes legacy quoted/lost values', () async {
+      await leadsDao.createLead(makeLead(id: 'lead-quoted'));
+      await leadsDao.updateLeadStatus('lead-quoted', 'quoted', 1);
+      final quotedLead = await leadsDao.getLeadById('lead-quoted');
+      expect(quotedLead!.status, 'estimate_sent');
+
+      await leadsDao.createLead(makeLead(id: 'lead-lost'));
+      await leadsDao.updateLeadStatus('lead-lost', 'lost', 1);
+      final lostLead = await leadsDao.getLeadById('lead-lost');
+      expect(lostLead!.status, 'cold');
+    });
+
+    test('markEstimateSent sets status, followup state, estimate timestamp',
+        () async {
+      await leadsDao.createLead(makeLead(id: 'lead-estimate'));
+
+      await leadsDao.markEstimateSent('lead-estimate', 1);
+
+      final lead = await leadsDao.getLeadById('lead-estimate');
+      expect(lead, isNotNull);
+      expect(lead!.status, 'estimate_sent');
+      expect(lead.followupState, 'active');
+      expect(lead.estimateSentAt, isNotNull);
+      expect(lead.version, 2);
+
+      final actions = await db.select(db.pendingSyncActions).get();
+      final action = actions.last;
+      expect(action.mutationType, 'update');
+      final payload = jsonDecode(action.payload) as Map<String, dynamic>;
+      expect(payload['status'], 'estimate_sent');
+      expect(payload['followup_state'], 'active');
+      expect(payload['estimate_sent_at'], isNotNull);
       expect(payload['version'], 2);
     });
 

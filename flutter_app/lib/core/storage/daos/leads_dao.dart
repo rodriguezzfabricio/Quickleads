@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../domain/lead_status_mapper.dart';
 import '../app_database.dart';
 import '../tables/leads_table.dart';
 import '../tables/pending_sync_actions_table.dart';
@@ -105,10 +106,11 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
     int currentVersion,
   ) {
     return transaction(() async {
+      final canonicalStatus = LeadStatusMapper.canonicalize(newStatus);
       final nextVersion = currentVersion + 1;
       await (update(localLeads)..where((l) => l.id.equals(leadId))).write(
         LocalLeadsCompanion(
-          status: Value(newStatus),
+          status: Value(canonicalStatus),
           version: Value(nextVersion),
           updatedAt: Value(DateTime.now()),
           needsSync: const Value(true),
@@ -117,11 +119,46 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
       await _queueSync(
         entityType: 'lead',
         entityId: leadId,
-        mutationType: 'status_transition',
+        mutationType: 'update',
         baseVersion: currentVersion,
         payload: {
           'id': leadId,
-          'status': _mapLeadStatusForSync(newStatus),
+          'status': canonicalStatus,
+          'version': nextVersion,
+        },
+      );
+    });
+  }
+
+  /// Mark estimate sent and activate the lead follow-up state locally.
+  Future<void> markEstimateSent(
+    String leadId,
+    int currentVersion, {
+    DateTime? estimateSentAt,
+  }) {
+    return transaction(() async {
+      final nextVersion = currentVersion + 1;
+      final estimateAt = estimateSentAt ?? DateTime.now();
+      await (update(localLeads)..where((l) => l.id.equals(leadId))).write(
+        LocalLeadsCompanion(
+          status: const Value(LeadStatusMapper.estimateDb),
+          followupState: const Value('active'),
+          estimateSentAt: Value(estimateAt),
+          version: Value(nextVersion),
+          updatedAt: Value(DateTime.now()),
+          needsSync: const Value(true),
+        ),
+      );
+      await _queueSync(
+        entityType: 'lead',
+        entityId: leadId,
+        mutationType: 'update',
+        baseVersion: currentVersion,
+        payload: {
+          'id': leadId,
+          'status': LeadStatusMapper.estimateDb,
+          'followup_state': 'active',
+          'estimate_sent_at': estimateAt.toIso8601String(),
           'version': nextVersion,
         },
       );
@@ -224,14 +261,6 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
       if (c.notes.present) 'notes': c.notes.value,
       if (c.status.present) 'status': c.status.value,
       if (c.followupState.present) 'followup_state': c.followupState.value,
-    };
-  }
-
-  String _mapLeadStatusForSync(String status) {
-    return switch (status) {
-      'quoted' => 'estimate_sent',
-      'lost' => 'cold',
-      _ => status,
     };
   }
 }
