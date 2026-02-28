@@ -77,11 +77,19 @@ final allLeadsProvider = StreamProvider.family<List<LocalLead>, String>(
   },
 );
 
-/// Watch won leads that have no linked project.
+/// Watch won leads that have no linked active job.
+final wonLeadsWithoutJobProvider =
+    StreamProvider.family<List<LocalLead>, String>(
+  (ref, orgId) {
+    return ref.watch(leadsDaoProvider).watchWonLeadsWithoutJob(orgId);
+  },
+);
+
+/// Backward-compatible alias for older consumers.
 final wonLeadsWithoutProjectProvider =
     StreamProvider.family<List<LocalLead>, String>(
   (ref, orgId) {
-    return ref.watch(leadsDaoProvider).watchWonLeadsWithoutProject(orgId);
+    return ref.watch(leadsDaoProvider).watchWonLeadsWithoutJob(orgId);
   },
 );
 
@@ -89,5 +97,29 @@ final wonLeadsWithoutProjectProvider =
 final jobsByOrgProvider = StreamProvider.family<List<LocalJob>, String>(
   (ref, orgId) {
     return ref.watch(jobsDaoProvider).watchJobsByOrg(orgId);
+  },
+);
+
+/// Watch the active job linked to a lead.
+final jobForLeadProvider = StreamProvider.family<LocalJob?, String>(
+  (ref, leadId) {
+    return ref.watch(jobsDaoProvider).watchJobByLeadId(leadId);
+  },
+);
+
+/// Watch jobs for an org filtered by health status.
+final jobsByHealthStatusProvider =
+    StreamProvider.family<List<LocalJob>, ({String orgId, String healthStatus})>(
+  (ref, params) {
+    return ref
+        .watch(jobsDaoProvider)
+        .watchJobsByHealthStatus(params.orgId, params.healthStatus);
+  },
+);
+
+/// Watch a single job by ID.
+final jobByIdProvider = StreamProvider.family<LocalJob?, String>(
+  (ref, jobId) {
+    return ref.watch(jobsDaoProvider).watchJobById(jobId);
   },
 );

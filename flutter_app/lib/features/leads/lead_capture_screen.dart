@@ -78,7 +78,8 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
     final companion = LocalLeadsCompanion.insert(
       id: _uuid.v4(),
       organizationId: orgId,
-      createdByProfileId: profileId != null ? Value(profileId) : const Value.absent(),
+      createdByProfileId:
+          profileId != null ? Value(profileId) : const Value.absent(),
       clientName: _nameCtrl.text.trim(),
       jobType: _selectedJobType!,
       phoneE164: _phoneCtrl.text.trim().isNotEmpty
@@ -101,7 +102,6 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('New Lead'),
@@ -126,7 +126,10 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
             children: [
               // ── Section: Contact ──────────────────────────────────────
-              _SectionLabel(label: 'Contact Info', icon: Icons.person_outline),
+              const _SectionLabel(
+                label: 'Contact Info',
+                icon: Icons.person_outline,
+              ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _nameCtrl,
@@ -137,14 +140,17 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
                   prefixIcon: Icon(Icons.badge_outlined),
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Client name is required' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Client name is required'
+                    : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _phoneCtrl,
                 keyboardType: TextInputType.phone,
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s()]'))],
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s()]'))
+                ],
                 decoration: const InputDecoration(
                   labelText: 'Phone Number',
                   hintText: '+1 555-000-0000',
@@ -172,7 +178,10 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
 
               const SizedBox(height: 28),
               // ── Section: Job ──────────────────────────────────────────
-              _SectionLabel(label: 'Job Details', icon: Icons.construction_outlined),
+              const _SectionLabel(
+                label: 'Job Details',
+                icon: Icons.construction_outlined,
+              ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _selectedJobType,
@@ -186,13 +195,17 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
                     .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                     .toList(),
                 onChanged: (v) => setState(() => _selectedJobType = v),
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Please select a job type' : null,
+                validator: (v) => (v == null || v.isEmpty)
+                    ? 'Please select a job type'
+                    : null,
               ),
 
               const SizedBox(height: 28),
               // ── Section: Notes ────────────────────────────────────────
-              _SectionLabel(label: 'Notes', icon: Icons.notes_outlined),
+              const _SectionLabel(
+                label: 'Notes',
+                icon: Icons.notes_outlined,
+              ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _notesCtrl,

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../app/router/app_router.dart';
+import '../../shared/widgets/lead_tile.dart';
 
 // ── Status constants ──────────────────────────────────────────────────────────
 
@@ -22,7 +22,12 @@ const _kStatuses = [
 // ── LeadsScreen ───────────────────────────────────────────────────────────────
 
 class LeadsScreen extends ConsumerStatefulWidget {
-  const LeadsScreen({super.key});
+  const LeadsScreen({
+    super.key,
+    this.initialStatus,
+  });
+
+  final String? initialStatus;
 
   @override
   ConsumerState<LeadsScreen> createState() => _LeadsScreenState();
@@ -35,7 +40,22 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _kStatuses.length, vsync: this);
+    _tabController = TabController(
+      length: _kStatuses.length,
+      vsync: this,
+      initialIndex: _tabIndexForStatus(widget.initialStatus),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant LeadsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialStatus != widget.initialStatus) {
+      final nextIndex = _tabIndexForStatus(widget.initialStatus);
+      if (_tabController.index != nextIndex) {
+        _tabController.animateTo(nextIndex);
+      }
+    }
   }
 
   @override
@@ -67,10 +87,17 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen>
                 final statusKey = s.$1;
                 final leadsAsync = statusKey == 'all'
                     ? ref.watch(allLeadsProvider(orgId))
-                    : ref.watch(leadsByStatusProvider((
-                        orgId: orgId,
-                        status: statusKey,
-                      )));
+                    : statusKey == 'quoted'
+                        ? ref.watch(allLeadsProvider(orgId)).whenData(
+                              (leads) => leads
+                                  .where(
+                                      (lead) => _matchesStatus(lead, statusKey))
+                                  .toList(),
+                            )
+                        : ref.watch(leadsByStatusProvider((
+                            orgId: orgId,
+                            status: statusKey,
+                          )));
                 return _LeadsTab(leadsAsync: leadsAsync, statusLabel: s.$2);
               }).toList(),
             ),
@@ -116,7 +143,7 @@ class _LeadsTab extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: leads.length,
           separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
-          itemBuilder: (context, i) => _LeadTile(lead: leads[i]),
+          itemBuilder: (context, i) => LeadTile(lead: leads[i]),
         );
       },
     );
@@ -152,74 +179,22 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _LeadTile extends StatelessWidget {
-  const _LeadTile({required this.lead});
-  final LocalLead lead;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final updated = DateFormat.MMMd().format(lead.updatedAt.toLocal());
-
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: _statusColor(lead.status, theme),
-        foregroundColor: theme.colorScheme.onPrimary,
-        child: Text(
-          lead.clientName.isNotEmpty ? lead.clientName[0].toUpperCase() : '?',
-        ),
-      ),
-      title: Text(lead.clientName,
-          style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
-      subtitle: Text('${lead.jobType}  ·  $updated',
-          style: theme.textTheme.bodySmall),
-      trailing: _StatusChip(status: lead.status),
-      onTap: () => context.push(
-        AppRoutes.leadDetail.replaceFirst(':leadId', lead.id),
-      ),
-    );
-  }
-
-  Color _statusColor(String status, ThemeData theme) {
-    final cs = theme.colorScheme;
-    return switch (status) {
-      'won' => Colors.green.shade600,
-      'quoted' => cs.primary,
-      'lost' => cs.error,
-      'cold' => Colors.blueGrey,
-      _ => cs.tertiary,
-    };
-  }
+int _tabIndexForStatus(String? status) {
+  final normalized = switch (status) {
+    'new' || 'new_callback' => 'new_callback',
+    'quoted' || 'estimate_sent' => 'quoted',
+    'won' => 'won',
+    'cold' => 'cold',
+    'lost' => 'lost',
+    _ => 'all',
+  };
+  final index = _kStatuses.indexWhere((s) => s.$1 == normalized);
+  return index == -1 ? 0 : index;
 }
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final label = switch (status) {
-      'new_callback' => 'New',
-      'quoted' => 'Quoted',
-      'won' => 'Won',
-      'cold' => 'Cold',
-      'lost' => 'Lost',
-      _ => status,
-    };
-    final color = switch (status) {
-      'won' => Colors.green.shade600,
-      'quoted' => theme.colorScheme.primary,
-      'lost' => theme.colorScheme.error,
-      'cold' => Colors.blueGrey,
-      _ => theme.colorScheme.tertiary,
-    };
-    return Chip(
-      label: Text(label,
-          style: theme.textTheme.labelSmall?.copyWith(color: Colors.white)),
-      backgroundColor: color,
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-    );
+bool _matchesStatus(LocalLead lead, String statusKey) {
+  if (statusKey == 'quoted') {
+    return lead.status == 'quoted' || lead.status == 'estimate_sent';
   }
+  return lead.status == statusKey;
 }

@@ -100,10 +100,10 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
             fullName: _fullNameController.text.trim(),
           );
 
+      // Router redirect handles navigation based on authProvider state.
       if (!mounted) {
         return;
       }
-      context.go(AppRoutes.workspaceSetup);
     } on AuthException catch (error) {
       if (!mounted) {
         return;

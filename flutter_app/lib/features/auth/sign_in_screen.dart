@@ -68,10 +68,12 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             password: _passwordController.text,
           );
 
+      // Router redirect handles navigation based on authProvider state:
+      //   authenticated   → home
+      //   needsWorkspace  → workspace-setup
       if (!mounted) {
         return;
       }
-      context.go(AppRoutes.home);
     } on AuthException catch (error) {
       if (!mounted) {
         return;

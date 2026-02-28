@@ -1,5 +1,6 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' hide isNotNull;
-import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:crewcommand_mobile/core/storage/app_database.dart';
@@ -22,7 +23,7 @@ void main() {
     const orgId = 'org-001';
     const profileId = 'profile-001';
 
-    LocalLeadsCompanion _makeLead({
+    LocalLeadsCompanion makeLead({
       required String id,
       String status = 'new_callback',
       String? phone,
@@ -32,14 +33,14 @@ void main() {
         organizationId: orgId,
         clientName: 'Test Lead $id',
         jobType: 'Kitchen Remodel',
-        createdByProfileId: Value(profileId),
+        createdByProfileId: const Value(profileId),
         phoneE164: Value(phone),
         status: Value(status),
       );
     }
 
     test('createLead inserts a lead and returns it via query', () async {
-      final lead = _makeLead(id: 'lead-1', phone: '+15551234567');
+      final lead = makeLead(id: 'lead-1', phone: '+15551234567');
 
       await leadsDao.createLead(lead);
 
@@ -55,7 +56,7 @@ void main() {
     });
 
     test('createLead queues a PendingSyncActions entry', () async {
-      final lead = _makeLead(id: 'lead-2');
+      final lead = makeLead(id: 'lead-2');
 
       await leadsDao.createLead(lead);
 
@@ -69,22 +70,51 @@ void main() {
     });
 
     test('updateLeadStatus updates status and queues sync', () async {
-      await leadsDao.createLead(_makeLead(id: 'lead-3'));
+      await leadsDao.createLead(makeLead(id: 'lead-3'));
 
-      await leadsDao.updateLeadStatus('lead-3', 'estimate_sent', 1);
+      await leadsDao.updateLeadStatus('lead-3', 'quoted', 1);
 
       final lead = await leadsDao.getLeadById('lead-3');
-      expect(lead!.status, 'estimate_sent');
+      expect(lead!.status, 'quoted');
+      expect(lead.version, 2);
       expect(lead.needsSync, true);
 
       // Should have 2 outbox entries: the create + the status update
       final actions = await db.select(db.pendingSyncActions).get();
       expect(actions, hasLength(2));
-      expect(actions.last.mutationType, 'status_transition');
+      final statusAction = actions.last;
+      expect(statusAction.mutationType, 'status_transition');
+      expect(statusAction.baseVersion, 1);
+
+      final payload = jsonDecode(statusAction.payload) as Map<String, dynamic>;
+      expect(payload['id'], 'lead-3');
+      expect(payload['status'], 'estimate_sent');
+      expect(payload['version'], 2);
+    });
+
+    test('watchWonLeadsWithoutJob excludes leads with active linked jobs',
+        () async {
+      await leadsDao.createLead(makeLead(id: 'lead-7', status: 'won'));
+      await leadsDao.createLead(makeLead(id: 'lead-8', status: 'won'));
+
+      await db.into(db.localJobs).insert(
+            LocalJobsCompanion.insert(
+              id: 'job-for-lead-8',
+              organizationId: orgId,
+              leadId: const Value('lead-8'),
+              clientName: 'Client 8',
+              jobType: 'Kitchen Remodel',
+            ),
+          );
+
+      final wonWithoutJob = await leadsDao.watchWonLeadsWithoutJob(orgId).first;
+      final ids = wonWithoutJob.map((lead) => lead.id).toList();
+      expect(ids, contains('lead-7'));
+      expect(ids, isNot(contains('lead-8')));
     });
 
     test('softDeleteLead sets deletedAt and queues sync', () async {
-      await leadsDao.createLead(_makeLead(id: 'lead-4'));
+      await leadsDao.createLead(makeLead(id: 'lead-4'));
 
       await leadsDao.softDeleteLead('lead-4', 1);
 
@@ -101,7 +131,7 @@ void main() {
       final stream = leadsDao.watchLeadsByStatus(orgId, 'new_callback');
       final future = stream.first;
 
-      await leadsDao.createLead(_makeLead(id: 'lead-5'));
+      await leadsDao.createLead(makeLead(id: 'lead-5'));
 
       final results = await future;
       expect(results, isNotEmpty);
@@ -132,7 +162,7 @@ void main() {
     });
 
     test('deleted leads are excluded from watchLeadsByStatus', () async {
-      await leadsDao.createLead(_makeLead(id: 'lead-6'));
+      await leadsDao.createLead(makeLead(id: 'lead-6'));
       await leadsDao.softDeleteLead('lead-6', 1);
 
       // Give the stream a moment, then check.

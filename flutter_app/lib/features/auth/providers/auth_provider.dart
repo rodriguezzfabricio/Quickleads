@@ -11,6 +11,7 @@ import '../../../core/network/supabase_constants.dart';
 enum AppAuthStatus {
   loading,
   unauthenticated,
+  awaitingEmailConfirmation,
   needsWorkspace,
   authenticated,
 }
@@ -149,7 +150,10 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
     required String password,
     required String fullName,
   }) async {
-    await _runAndRefresh(() async {
+    final previous = state;
+    state = const AsyncLoading();
+
+    try {
       final response = await _supabase.auth.signUp(
         email: email.trim(),
         password: password,
@@ -158,11 +162,20 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
 
       final activeSession = response.session ?? _supabase.auth.currentSession;
       if (activeSession == null) {
-        throw const supabase.AuthException(
-          'Sign-up completed, but no session was created. Check email confirmation settings.',
-        );
+        // Email confirmation is required — no session yet.
+        state = const AsyncData(AppAuthState(
+          status: AppAuthStatus.awaitingEmailConfirmation,
+        ));
+        return;
       }
-    });
+
+      // Session exists — resolve full auth state.
+      state = await AsyncValue.guard(_resolveAuthState);
+    } catch (error, stackTrace) {
+      final resolved = await AsyncValue.guard(_resolveAuthState);
+      state = resolved.hasError ? previous : resolved;
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   Future<void> bootstrapWorkspace({
@@ -170,8 +183,17 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
     required String timezone,
   }) async {
     await _runAndRefresh(() async {
-      Future<supabase.FunctionResponse> invokeBootstrap(String accessToken) {
-        return _supabase.functions.invoke(
+      final accessToken = await _ensureValidAccessToken();
+      if (kDebugMode) {
+        debugPrint(
+          'Workspace bootstrap token: ${_tokenDebugSummary(accessToken)}; '
+          'user=${_supabase.auth.currentUser?.id}',
+        );
+      }
+
+      supabase.FunctionResponse response;
+      try {
+        response = await _supabase.functions.invoke(
           'auth-bootstrap',
           headers: {'Authorization': 'Bearer $accessToken'},
           body: {
@@ -179,44 +201,31 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
             'timezone': timezone,
           },
         );
-      }
-
-      final initialToken = await _ensureValidAccessToken();
-      if (kDebugMode) {
-        debugPrint(
-          'Workspace bootstrap token (initial): ${_tokenDebugSummary(initialToken)}; '
-          'user=${_supabase.auth.currentUser?.id}',
-        );
-      }
-      supabase.FunctionResponse response;
-
-      try {
-        response = await invokeBootstrap(initialToken);
       } catch (error) {
-        if (!_isJwtFailure(error)) {
-          rethrow;
+        if (kDebugMode) {
+          debugPrint('Bootstrap call failed: $error');
         }
 
-        final refreshedToken = await _ensureValidAccessToken(
-          forceRefresh: true,
-        );
-        if (kDebugMode) {
-          debugPrint(
-            'Workspace bootstrap token (refreshed): ${_tokenDebugSummary(refreshedToken)}; '
-            'user=${_supabase.auth.currentUser?.id}',
-          );
-        }
-        try {
-          response = await invokeBootstrap(refreshedToken);
-        } catch (retryError) {
-          if (_isJwtFailure(retryError)) {
-            await _supabase.auth.signOut(scope: supabase.SignOutScope.local);
-            throw const supabase.AuthException(
-              'Session is invalid for this Supabase project. Please sign in again.',
-            );
+        // If the function returned a 409 "conflict" (workspace already exists),
+        // treat it as success — the profile already exists, just refresh state.
+        final errorStr = error.toString();
+        if (errorStr.contains('409') ||
+            errorStr.contains('conflict') ||
+            errorStr.contains('already initialized')) {
+          if (kDebugMode) {
+            debugPrint('Workspace already exists — treating as success.');
           }
-          rethrow;
+          return; // _runAndRefresh will call _resolveAuthState which finds the profile.
         }
+
+        // Extract a human-readable message from FunctionException details.
+        final message = _extractFunctionErrorMessage(error);
+        throw Exception(message);
+      }
+
+      if (kDebugMode) {
+        debugPrint('Bootstrap response status: ${response.status}');
+        debugPrint('Bootstrap response data: ${response.data}');
       }
 
       final payload = response.data;
@@ -244,6 +253,26 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
         throw StateError('auth-bootstrap returned malformed IDs.');
       }
     });
+  }
+
+  String _extractFunctionErrorMessage(Object error) {
+    final raw = error.toString();
+
+    // Try to parse the details from FunctionException
+    // Format: FunctionException(status: 500, details: {ok: false, error: {code: ..., message: ...}})
+    final messageMatch = RegExp(r'message:\s*([^}]+)').firstMatch(raw);
+    if (messageMatch != null) {
+      final msg = messageMatch.group(1)?.trim();
+      if (msg != null && msg.isNotEmpty) {
+        return msg;
+      }
+    }
+
+    if (raw.contains('FunctionException')) {
+      return 'Workspace service error. Please try again.';
+    }
+
+    return raw.isNotEmpty ? raw : 'Could not create workspace. Please try again.';
   }
 
   Future<String> _ensureValidAccessToken({

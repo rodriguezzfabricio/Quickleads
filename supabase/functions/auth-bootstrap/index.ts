@@ -102,6 +102,11 @@ function createServiceRoleClient(): SupabaseClient {
       autoRefreshToken: false,
       persistSession: false,
     },
+    global: {
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+    },
   });
 }
 
@@ -220,11 +225,14 @@ Deno.serve(async (request: Request) => {
     });
 
     if (error) {
+      console.error("bootstrap_organization RPC error:", JSON.stringify(error));
+
       if (typeof error.message === "string" && error.message.includes("user already has an owner profile")) {
         throw new HttpError(409, "conflict", "Workspace is already initialized for this user.");
       }
 
-      throw new HttpError(500, "internal_error", "Failed to bootstrap organization and owner profile.");
+      const detail = typeof error.message === "string" ? error.message : JSON.stringify(error);
+      throw new HttpError(500, "internal_error", `bootstrap_organization failed: ${detail}`);
     }
 
     if (
