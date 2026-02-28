@@ -1,4 +1,4 @@
-import { Home, Users, Briefcase, UserCircle2, Plus, Phone, ClipboardList } from 'lucide-react';
+import { Home, Users, Briefcase, UserCircle2, Plus, Phone, ClipboardList, type LucideIcon } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState } from 'react';
@@ -23,7 +23,7 @@ export function BottomNav() {
     { path: '/jobs', label: 'Jobs', icon: Briefcase },
   ];
 
-  const renderTab = (tab: { path: string; label: string; icon: any }) => {
+  const renderTab = (tab: { path: string; label: string; icon: LucideIcon }) => {
     const Icon = tab.icon;
     const active = isActive(tab.path);
     return (

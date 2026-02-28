@@ -1,4 +1,4 @@
-import { HttpError, isHttpError, requireAuthContext } from "../_shared/auth.ts";
+import { HttpError, isHttpError, requireAuthContext, type AuthContext } from "../_shared/auth.ts";
 import {
   ValidationError,
   isRecord,
@@ -71,6 +71,165 @@ const ENTITY_TYPES = new Set([
 ] as const);
 
 const MUTATION_TYPES = new Set(["insert", "update", "delete", "status_transition"] as const);
+const LEAD_TERMINAL_STATUSES = new Set(["won", "cold"]);
+const LEAD_EARLY_STATUSES = new Set(["new_callback", "estimate_sent"]);
+const FOLLOWUP_STATE_PRIORITY: Record<string, number> = {
+  none: 0,
+  active: 1,
+  paused: 2,
+  stopped: 3,
+  completed: 4,
+};
+
+interface EntityConfig {
+  tableName: string;
+  isVersioned: boolean;
+  supportsSoftDelete: boolean;
+}
+
+const ENTITY_CONFIG: Record<SyncMutationRequest["entity"], EntityConfig> = {
+  lead: {
+    tableName: "leads",
+    isVersioned: true,
+    supportsSoftDelete: true,
+  },
+  job: {
+    tableName: "jobs",
+    isVersioned: true,
+    supportsSoftDelete: true,
+  },
+  followup_sequence: {
+    tableName: "followup_sequences",
+    isVersioned: false,
+    supportsSoftDelete: false,
+  },
+  call_log: {
+    tableName: "call_logs",
+    isVersioned: false,
+    supportsSoftDelete: false,
+  },
+  import: {
+    tableName: "imports",
+    isVersioned: false,
+    supportsSoftDelete: false,
+  },
+  notification: {
+    tableName: "notifications",
+    isVersioned: false,
+    supportsSoftDelete: false,
+  },
+  device: {
+    tableName: "devices",
+    isVersioned: false,
+    supportsSoftDelete: false,
+  },
+};
+
+function isUniqueViolation(error: unknown): boolean {
+  return isRecord(error) && error.code === "23505";
+}
+
+function toSafeInteger(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isInteger(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function isTerminalStatusRevert(currentStatus: string, nextStatus: string): boolean {
+  return LEAD_TERMINAL_STATUSES.has(currentStatus) && LEAD_EARLY_STATUSES.has(nextStatus) && currentStatus !== nextStatus;
+}
+
+function isFollowupStateDowngrade(currentState: string, nextState: string): boolean {
+  const currentPriority = FOLLOWUP_STATE_PRIORITY[currentState];
+  const nextPriority = FOLLOWUP_STATE_PRIORITY[nextState];
+  if (currentPriority == null || nextPriority == null) {
+    return false;
+  }
+  return nextPriority < currentPriority;
+}
+
+function sanitizeUpdatePayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const nextPayload = { ...payload };
+  delete nextPayload.id;
+  delete nextPayload.organization_id;
+  delete nextPayload.version;
+  delete nextPayload.created_at;
+  delete nextPayload.updated_at;
+  return nextPayload;
+}
+
+async function recordSyncMutation(
+  auth: AuthContext,
+  mutation: SyncMutationRequest,
+  entityId: string | null,
+  hadConflict: boolean,
+  resolution?: string,
+): Promise<"recorded" | "duplicate"> {
+  const { error } = await auth.client.from("sync_mutations").insert({
+    organization_id: auth.organizationId,
+    entity_id: entityId,
+    entity_type: mutation.entity,
+    mutation_type: mutation.type,
+    client_mutation_id: mutation.client_mutation_id,
+    base_version: mutation.base_version ?? null,
+    payload: mutation.payload,
+    had_conflict: hadConflict,
+    resolution: resolution ?? null,
+    processed_at: new Date().toISOString(),
+  });
+
+  if (!error) {
+    return "recorded";
+  }
+
+  if (isUniqueViolation(error)) {
+    return "duplicate";
+  }
+
+  throw new HttpError(500, "internal_error", "Failed to persist sync mutation audit log.");
+}
+
+async function resolveCurrentRow(
+  auth: AuthContext,
+  mutation: SyncMutationRequest,
+  config: EntityConfig,
+  entityId: string,
+): Promise<Record<string, unknown> | null> {
+  const selectColumns = ["id"];
+  if (config.isVersioned) {
+    selectColumns.push("version");
+  }
+
+  if (mutation.entity === "lead") {
+    selectColumns.push("status", "followup_state");
+  }
+
+  const { data, error } = await auth.client
+    .from(config.tableName)
+    .select(selectColumns.join(", "))
+    .eq("id", entityId)
+    .eq("organization_id", auth.organizationId)
+    .maybeSingle();
+
+  if (error) {
+    throw new HttpError(500, "internal_error", `Failed to resolve ${mutation.entity} before applying mutation.`);
+  }
+
+  if (data == null) {
+    return null;
+  }
+
+  return data as Record<string, unknown>;
+}
 
 function jsonResponse(payload: ApiSuccess | ApiError, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -209,26 +368,228 @@ Deno.serve(async (request: Request) => {
       throw new HttpError(403, "forbidden", "Device is not registered to the authenticated organization.");
     }
 
-    // --- SCAFFOLD-ONLY: no persistence logic yet ---
-    // TODO(PHASE-2-sync-write): Apply validated mutations per entity type, persist
-    //   idempotency records in sync_mutations with (organization_id, client_mutation_id).
-    // TODO(PHASE-2-conflict-policy): Enforce server-authoritative conflict resolution
-    //   for terminal lead states (won/cold cannot revert to earlier pipeline stages).
-    // TODO(PHASE-2-sync-write): On success, return 200 with SyncPushData including
-    //   applied mutation IDs, conflicts, and stable server_cursor.
+    const appliedIds: string[] = [];
+    const conflictList: SyncConflict[] = [];
 
-    return jsonResponse(
-      {
-        ok: false,
-        error: {
-          code: "not_implemented",
-          message:
-            "sync-push is scaffold-only and not production-ready. " +
-            "Auth and validation passed but no mutations were applied.",
-        },
+    for (const mutation of payload.mutations) {
+      const config = ENTITY_CONFIG[mutation.entity];
+      const entityId =
+        mutation.entity_id ??
+        (typeof mutation.payload.id === "string" ? mutation.payload.id : null);
+
+      const { data: existingMutation, error: existingMutationError } = await auth.client
+        .from("sync_mutations")
+        .select("id")
+        .eq("organization_id", auth.organizationId)
+        .eq("client_mutation_id", mutation.client_mutation_id)
+        .maybeSingle();
+
+      if (existingMutationError) {
+        throw new HttpError(500, "internal_error", "Failed to verify sync mutation idempotency.");
+      }
+
+      if (existingMutation) {
+        appliedIds.push(mutation.client_mutation_id);
+        continue;
+      }
+
+      if (mutation.type === "insert") {
+        const insertPayload: Record<string, unknown> = {
+          ...mutation.payload,
+          organization_id: auth.organizationId,
+        };
+
+        if (mutation.entity === "lead" && insertPayload.created_by_profile_id == null) {
+          insertPayload.created_by_profile_id = auth.profileId;
+        }
+
+        const { data: insertedRow, error: insertError } = await auth.client
+          .from(config.tableName)
+          .insert(insertPayload)
+          .select("id")
+          .maybeSingle();
+
+        if (insertError) {
+          throw new HttpError(500, "internal_error", `Failed to insert ${mutation.entity} mutation.`);
+        }
+
+        const persistedEntityId =
+          entityId ??
+          (isRecord(insertedRow) && typeof insertedRow.id === "string" ? insertedRow.id : null);
+
+        const recordStatus = await recordSyncMutation(auth, mutation, persistedEntityId, false, "applied");
+        if (recordStatus === "duplicate") {
+          appliedIds.push(mutation.client_mutation_id);
+          continue;
+        }
+
+        appliedIds.push(mutation.client_mutation_id);
+        continue;
+      }
+
+      if (!entityId) {
+        const reason = "entity_id is required for update/delete/status_transition mutations.";
+        await recordSyncMutation(auth, mutation, null, true, reason);
+        conflictList.push({
+          client_mutation_id: mutation.client_mutation_id,
+          reason,
+        });
+        continue;
+      }
+
+      const currentRow = await resolveCurrentRow(auth, mutation, config, entityId);
+      if (!currentRow) {
+        const reason = `The target ${mutation.entity} was not found for this organization.`;
+        await recordSyncMutation(auth, mutation, entityId, true, reason);
+        conflictList.push({
+          client_mutation_id: mutation.client_mutation_id,
+          reason,
+        });
+        continue;
+      }
+
+      let currentVersion: number | null = null;
+      if (config.isVersioned) {
+        currentVersion = toSafeInteger(currentRow.version);
+        if (currentVersion == null) {
+          throw new HttpError(500, "internal_error", `Stored ${mutation.entity} version is invalid.`);
+        }
+      }
+
+      if (
+        config.isVersioned &&
+        mutation.base_version != null &&
+        currentVersion != null &&
+        currentVersion > mutation.base_version
+      ) {
+        const reason = `Version conflict: server=${currentVersion}, client_base=${mutation.base_version}.`;
+        await recordSyncMutation(auth, mutation, entityId, true, reason);
+        conflictList.push({
+          client_mutation_id: mutation.client_mutation_id,
+          reason,
+        });
+        continue;
+      }
+
+      const nextStatusRaw = mutation.payload.status;
+      if (mutation.entity === "lead" && typeof nextStatusRaw === "string") {
+        const currentStatus = typeof currentRow.status === "string" ? currentRow.status : "";
+        if (isTerminalStatusRevert(currentStatus, nextStatusRaw)) {
+          const reason = `Lead status conflict: cannot revert terminal status '${currentStatus}' to '${nextStatusRaw}'.`;
+          await recordSyncMutation(auth, mutation, entityId, true, reason);
+          conflictList.push({
+            client_mutation_id: mutation.client_mutation_id,
+            reason,
+          });
+          continue;
+        }
+      }
+
+      const nextFollowupStateRaw = mutation.payload.followup_state;
+      if (mutation.entity === "lead" && typeof nextFollowupStateRaw === "string") {
+        const currentFollowupState = typeof currentRow.followup_state === "string" ? currentRow.followup_state : "";
+        if (isFollowupStateDowngrade(currentFollowupState, nextFollowupStateRaw)) {
+          const reason =
+            `Lead follow-up conflict: cannot downgrade followup_state from '${currentFollowupState}' to ` +
+            `'${nextFollowupStateRaw}'.`;
+          await recordSyncMutation(auth, mutation, entityId, true, reason);
+          conflictList.push({
+            client_mutation_id: mutation.client_mutation_id,
+            reason,
+          });
+          continue;
+        }
+      }
+
+      if (mutation.type === "delete") {
+        if (!config.supportsSoftDelete) {
+          const reason = `Delete conflict: ${mutation.entity} does not support soft delete.`;
+          await recordSyncMutation(auth, mutation, entityId, true, reason);
+          conflictList.push({
+            client_mutation_id: mutation.client_mutation_id,
+            reason,
+          });
+          continue;
+        }
+
+        const deletePatch: Record<string, unknown> = {
+          deleted_at: new Date().toISOString(),
+        };
+        if (config.isVersioned && currentVersion != null) {
+          deletePatch.version = currentVersion + 1;
+        }
+
+        const { error: deleteError } = await auth.client
+          .from(config.tableName)
+          .update(deletePatch)
+          .eq("id", entityId)
+          .eq("organization_id", auth.organizationId);
+
+        if (deleteError) {
+          throw new HttpError(500, "internal_error", `Failed to soft-delete ${mutation.entity}.`);
+        }
+
+        await recordSyncMutation(auth, mutation, entityId, false, "applied");
+        appliedIds.push(mutation.client_mutation_id);
+        continue;
+      }
+
+      const updatePatch = sanitizeUpdatePayload(mutation.payload);
+      if (mutation.type === "status_transition") {
+        if (typeof mutation.payload.status !== "string") {
+          const reason = "status_transition mutation requires a string payload.status.";
+          await recordSyncMutation(auth, mutation, entityId, true, reason);
+          conflictList.push({
+            client_mutation_id: mutation.client_mutation_id,
+            reason,
+          });
+          continue;
+        }
+      }
+
+      if (mutation.type === "status_transition") {
+        Object.keys(updatePatch).forEach((key) => {
+          if (key !== "status") {
+            delete updatePatch[key];
+          }
+        });
+      }
+
+      if (config.isVersioned && currentVersion != null) {
+        updatePatch.version = currentVersion + 1;
+      }
+
+      if (Object.keys(updatePatch).length > 0) {
+        const { error: updateError } = await auth.client
+          .from(config.tableName)
+          .update(updatePatch)
+          .eq("id", entityId)
+          .eq("organization_id", auth.organizationId);
+
+        if (updateError) {
+          throw new HttpError(500, "internal_error", `Failed to update ${mutation.entity}.`);
+        }
+      }
+
+      const recordStatus = await recordSyncMutation(auth, mutation, entityId, false, "applied");
+      if (recordStatus === "duplicate") {
+        appliedIds.push(mutation.client_mutation_id);
+        continue;
+      }
+
+      appliedIds.push(mutation.client_mutation_id);
+    }
+
+    return jsonResponse({
+      ok: true,
+      data: {
+        organization_id: auth.organizationId,
+        received_mutations: payload.mutations.length,
+        applied: appliedIds,
+        conflicts: conflictList,
+        server_cursor: new Date().toISOString(),
       },
-      501,
-    );
+    });
   } catch (error) {
     const mappedError = mapError(error);
     return jsonResponse(mappedError.body, mappedError.status);

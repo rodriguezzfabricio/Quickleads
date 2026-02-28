@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../app/router/app_router.dart';
 import '../../core/constants/app_tokens.dart';
+import 'providers/auth_provider.dart';
 
-class MagicLinkScreen extends StatefulWidget {
+class MagicLinkScreen extends ConsumerStatefulWidget {
   const MagicLinkScreen({super.key});
 
   @override
-  State<MagicLinkScreen> createState() => _MagicLinkScreenState();
+  ConsumerState<MagicLinkScreen> createState() => _MagicLinkScreenState();
 }
 
-class _MagicLinkScreenState extends State<MagicLinkScreen> {
+class _MagicLinkScreenState extends ConsumerState<MagicLinkScreen> {
   final TextEditingController _emailController = TextEditingController();
   bool _submitted = false;
   bool _linkSent = false;
+  bool _isLoading = false;
+  String? _errorMessage;
 
   String? _validateEmail() {
     final email = _emailController.text.trim();
@@ -31,11 +36,53 @@ class _MagicLinkScreenState extends State<MagicLinkScreen> {
 
   bool get _isEmailValid => _validateEmail() == null;
 
-  void _handleSendPressed() {
+  Future<void> _handleSendPressed() async {
     setState(() {
       _submitted = true;
-      _linkSent = _isEmailValid;
+      _errorMessage = null;
+      _linkSent = false;
     });
+
+    if (!_isEmailValid) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await ref.read(authProvider.notifier).signInWithOtp(
+            email: _emailController.text.trim(),
+          );
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _linkSent = true;
+      });
+    } on AuthException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = error.message;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = 'Could not send magic link. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -71,9 +118,11 @@ class _MagicLinkScreenState extends State<MagicLinkScreen> {
                     TextField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
+                      enabled: !_isLoading,
                       onChanged: (_) {
                         setState(() {
                           _linkSent = false;
+                          _errorMessage = null;
                         });
                       },
                       decoration: InputDecoration(
@@ -86,25 +135,39 @@ class _MagicLinkScreenState extends State<MagicLinkScreen> {
                     SizedBox(
                       height: 52,
                       child: FilledButton(
-                        onPressed: _handleSendPressed,
-                        child: Text(_linkSent ? 'Resend Magic Link' : 'Send Magic Link'),
+                        onPressed: _isLoading ? null : _handleSendPressed,
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Text(_linkSent ? 'Resend Magic Link' : 'Send Magic Link'),
                       ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       height: 52,
                       child: OutlinedButton(
-                        onPressed: () => context.go(AppRoutes.signIn),
+                        onPressed: _isLoading ? null : () => context.go(AppRoutes.signIn),
                         child: const Text('Back to Sign In'),
                       ),
                     ),
                     TextButton(
-                      onPressed: () => context.push(AppRoutes.signUp),
+                      onPressed: _isLoading ? null : () => context.push(AppRoutes.signUp),
                       child: const Text('Need an account? Sign Up'),
                     ),
                   ],
                 ),
               ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 16),
+                _StatusCard(
+                  title: 'Failed to send magic link',
+                  body: _errorMessage!,
+                  icon: Icons.error_outline,
+                ),
+              ],
               if (!_linkSent && email.isEmpty) ...[
                 const SizedBox(height: 16),
                 const _StatusCard(
@@ -117,7 +180,7 @@ class _MagicLinkScreenState extends State<MagicLinkScreen> {
                 const SizedBox(height: 16),
                 _StatusCard(
                   title: 'Magic link sent',
-                  body: 'A sign-in link will be sent to $email once backend integration is connected.',
+                  body: 'A secure sign-in link was sent to $email.',
                   icon: Icons.check_circle_outline,
                   iconColor: AppTokens.success,
                 ),

@@ -146,11 +146,14 @@ export function HomeScreen() {
           </motion.div>
         )}
 
-        {leads.filter(l => l.status === 'cold').length > 0 && (
-          <button onClick={() => handleFilterClick('cold')} className="w-full text-center text-[13px] text-muted-foreground py-3 active:opacity-70">
-            View {leads.filter(l => l.status === 'cold').length} Cold Leads
-          </button>
-        )}
+        {(() => {
+          const coldCount = leads.filter(l => l.status === 'cold').length;
+          return coldCount > 0 ? (
+            <button onClick={() => handleFilterClick('cold')} className="w-full text-center text-[13px] text-muted-foreground py-3 active:opacity-70">
+              View {coldCount} Cold Leads
+            </button>
+          ) : null;
+        })()}
       </div>
 
       {showWonReminder && (

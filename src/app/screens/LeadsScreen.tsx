@@ -17,7 +17,9 @@ const filters = [
 export function LeadsScreen() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const statusFilter = (searchParams.get('status') as LeadStatus | null) || 'all';
+  const rawStatus = searchParams.get('status');
+  const validStatuses: LeadStatus[] = ['call-back-now', 'estimate-sent', 'won', 'cold'];
+  const statusFilter = rawStatus && validStatuses.includes(rawStatus as LeadStatus) ? rawStatus as LeadStatus : 'all';
   const { leads, unknownCalls, markEstimateSent } = useLeads();
   const [selectedStatus, setSelectedStatus] = useState<LeadStatus | 'all'>(statusFilter);
   const [expandedId, setExpandedId] = useState<string | null>(null);
