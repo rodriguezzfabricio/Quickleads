@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-final supabaseReadyProvider = Provider<bool>((ref) {
-  // TODO(phase-1): Initialize Supabase and expose typed repositories.
-  return false;
+final supabaseClientProvider = Provider<SupabaseClient>((ref) {
+  return Supabase.instance.client;
 });

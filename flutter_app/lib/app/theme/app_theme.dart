@@ -14,7 +14,7 @@ class AppTheme {
       error: AppTokens.danger,
     ),
     useMaterial3: true,
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: AppTokens.glass,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),

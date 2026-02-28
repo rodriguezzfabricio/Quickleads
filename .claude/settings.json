@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx supabase migration list)",
+      "Bash(npx supabase functions deploy leads-estimate-sent --no-verify-jwt)",
+      "Bash(npx supabase functions deploy sync-push --no-verify-jwt)",
+      "Bash(npx supabase functions deploy sync-pull --no-verify-jwt)",
+      "Bash(npx supabase secrets set SUPABASE_URL=https://seuoakzowzmqsmbqzznm.supabase.co SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNldW9ha3pvd3ptcXNtYnF6em5tIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjIyNTEyOSwiZXhwIjoyMDg3ODAxMTI5fQ.DCosAaPQWUGQnSrDRfLn5W7CSOO5duGkML_cqkmvWqg)",
+      "Bash(npx supabase functions list)",
+      "Bash(curl -s \"https://seuoakzowzmqsmbqzznm.supabase.co/rest/v1/\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNldW9ha3pvd3ptcXNtYnF6em5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMjUxMjksImV4cCI6MjA4NzgwMTEyOX0.k_c1kPZznrMF-F6AkPGnVhBTTd6C9FgKzq8ld9hXccs\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNldW9ha3pvd3ptcXNtYnF6em5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMjUxMjksImV4cCI6MjA4NzgwMTEyOX0.k_c1kPZznrMF-F6AkPGnVhBTTd6C9FgKzq8ld9hXccs\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s \"https://seuoakzowzmqsmbqzznm.supabase.co/rest/v1/\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNldW9ha3pvd3ptcXNtYnF6em5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMjUxMjksImV4cCI6MjA4NzgwMTEyOX0.k_c1kPZznrMF-F6AkPGnVhBTTd6C9FgKzq8ld9hXccs\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''\\\\n''.join\\(sorted\\([p for p in d.get\\(''paths'',{}\\).keys\\(\\) if p != ''/'']\\)\\)\\)\")",
+      "Bash(python3 -c \":*)",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);[print\\(p\\) for p in sorted\\(d.get\\(''paths'',{}\\).keys\\(\\)\\) if p.startswith\\(''/''\\)]\")",
+      "Read(//Users/fabriciorodriguez/Desktop/Contractor Communication App/flutter_app/lib/features/**)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:deepwiki.com)"
+    ]
+  }
+}

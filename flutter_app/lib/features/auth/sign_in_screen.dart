@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../app/router/app_router.dart';
 import '../../core/constants/app_tokens.dart';
+import 'providers/auth_provider.dart';
 
-class SignInScreen extends StatefulWidget {
+class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
 
   @override
-  State<SignInScreen> createState() => _SignInScreenState();
+  ConsumerState<SignInScreen> createState() => _SignInScreenState();
 }
 
-class _SignInScreenState extends State<SignInScreen> {
+class _SignInScreenState extends ConsumerState<SignInScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _submitted = false;
+  bool _isLoading = false;
+  String? _errorMessage;
 
   String? _validateEmail() {
     final email = _emailController.text.trim();
@@ -43,10 +48,51 @@ class _SignInScreenState extends State<SignInScreen> {
   bool get _showEmptyState =>
       _emailController.text.trim().isEmpty && _passwordController.text.trim().isEmpty;
 
-  void _handleSignInPressed() {
+  Future<void> _handleSignInPressed() async {
     setState(() {
       _submitted = true;
     });
+
+    if (!_isFormValid) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await ref.read(authProvider.notifier).signInWithPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+          );
+
+      if (!mounted) {
+        return;
+      }
+      context.go(AppRoutes.home);
+    } on AuthException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = error.message;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = 'Sign in failed. Please verify your email and password.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -82,7 +128,10 @@ class _SignInScreenState extends State<SignInScreen> {
                     TextField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
-                      onChanged: (_) => setState(() {}),
+                      enabled: !_isLoading,
+                      onChanged: (_) => setState(() {
+                        _errorMessage = null;
+                      }),
                       decoration: InputDecoration(
                         labelText: 'Email',
                         hintText: 'owner@contractor.com',
@@ -93,7 +142,10 @@ class _SignInScreenState extends State<SignInScreen> {
                     TextField(
                       controller: _passwordController,
                       obscureText: true,
-                      onChanged: (_) => setState(() {}),
+                      enabled: !_isLoading,
+                      onChanged: (_) => setState(() {
+                        _errorMessage = null;
+                      }),
                       decoration: InputDecoration(
                         labelText: 'Password',
                         hintText: 'At least 8 characters',
@@ -104,39 +156,45 @@ class _SignInScreenState extends State<SignInScreen> {
                     SizedBox(
                       height: 52,
                       child: FilledButton(
-                        onPressed: _handleSignInPressed,
-                        child: const Text('Sign In'),
+                        onPressed: _isLoading ? null : _handleSignInPressed,
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Sign In'),
                       ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       height: 52,
                       child: OutlinedButton(
-                        onPressed: () => context.push(AppRoutes.magicLink),
+                        onPressed: _isLoading ? null : () => context.push(AppRoutes.magicLink),
                         child: const Text('Use Magic Link'),
                       ),
                     ),
                     TextButton(
-                      onPressed: () => context.push(AppRoutes.signUp),
+                      onPressed: _isLoading ? null : () => context.push(AppRoutes.signUp),
                       child: const Text('Create Account'),
                     ),
                   ],
                 ),
               ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 16),
+                _StatusCard(
+                  title: 'Sign in failed',
+                  body: _errorMessage!,
+                  icon: Icons.error_outline,
+                ),
+              ],
               if (_showEmptyState) ...[
                 const SizedBox(height: 16),
                 const _StatusCard(
                   title: 'No account details entered yet',
                   body: 'Add email and password to unlock the sign-in action.',
                   icon: Icons.info_outline,
-                ),
-              ],
-              if (_submitted && _isFormValid) ...[
-                const SizedBox(height: 16),
-                const _StatusCard(
-                  title: 'Validation passed',
-                  body: 'Auth backend wiring is intentionally deferred for integration.',
-                  icon: Icons.check_circle_outline,
                 ),
               ],
             ],

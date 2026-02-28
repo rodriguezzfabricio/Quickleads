@@ -1,78 +1,115 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router/app_router.dart';
 import '../../core/constants/app_tokens.dart';
+import '../auth/providers/auth_provider.dart';
 
-class WorkspaceSetupScreen extends StatefulWidget {
+class WorkspaceSetupScreen extends ConsumerStatefulWidget {
   const WorkspaceSetupScreen({super.key});
 
   @override
-  State<WorkspaceSetupScreen> createState() => _WorkspaceSetupScreenState();
+  ConsumerState<WorkspaceSetupScreen> createState() => _WorkspaceSetupScreenState();
 }
 
-class _WorkspaceSetupScreenState extends State<WorkspaceSetupScreen> {
-  final TextEditingController _workspaceNameController = TextEditingController();
-  final TextEditingController _inviteEmailController = TextEditingController();
-  String? _businessType;
+class _WorkspaceSetupScreenState extends ConsumerState<WorkspaceSetupScreen> {
+  final TextEditingController _businessNameController = TextEditingController();
+  String _timezone = 'America/New_York';
   bool _submitted = false;
-  bool _autoFollowupsEnabled = true;
+  bool _isSubmitting = false;
+  String? _errorMessage;
 
-  String? _validateWorkspaceName() {
-    if (_workspaceNameController.text.trim().isEmpty) {
-      return 'Workspace name is required';
+  static const _timezones = <String>[
+    'America/New_York',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'America/Phoenix',
+    'America/Anchorage',
+    'Pacific/Honolulu',
+  ];
+
+  String? _validateBusinessName() {
+    if (_businessNameController.text.trim().isEmpty) {
+      return 'Business name is required';
     }
 
     return null;
   }
 
-  String? _validateBusinessType() {
-    if (_businessType == null) {
-      return 'Business type is required';
-    }
+  bool get _isFormValid => _validateBusinessName() == null;
 
-    return null;
-  }
-
-  String? _validateInviteEmail() {
-    final inviteEmail = _inviteEmailController.text.trim();
-    if (inviteEmail.isEmpty) {
-      return null;
-    }
-
-    if (!inviteEmail.contains('@') || !inviteEmail.contains('.')) {
-      return 'Enter a valid teammate email';
-    }
-
-    return null;
-  }
-
-  bool get _isFormValid =>
-      _validateWorkspaceName() == null &&
-      _validateBusinessType() == null &&
-      _validateInviteEmail() == null;
-
-  void _handleContinuePressed() {
+  Future<void> _handleContinuePressed() async {
     setState(() {
       _submitted = true;
+      _errorMessage = null;
     });
 
-    if (_isFormValid) {
-      context.go(AppRoutes.onboarding);
+    if (!_isFormValid) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      await ref.read(authProvider.notifier).bootstrapWorkspace(
+            businessName: _businessNameController.text.trim(),
+            timezone: _timezone,
+          );
+
+      if (!mounted) {
+        return;
+      }
+      context.go(AppRoutes.home);
+    } catch (error, stackTrace) {
+      debugPrint('Workspace bootstrap failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = _readErrorMessage(error);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 
   @override
   void dispose() {
-    _workspaceNameController.dispose();
-    _inviteEmailController.dispose();
+    _businessNameController.dispose();
     super.dispose();
+  }
+
+  String _readErrorMessage(Object error) {
+    final raw = error.toString();
+    if (raw.startsWith('Exception: ')) {
+      final trimmed = raw.substring('Exception: '.length).trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+
+    if (raw.startsWith('StateError: ')) {
+      final trimmed = raw.substring('StateError: '.length).trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+
+    return raw.isNotEmpty ? raw : 'Could not create workspace. Please try again.';
   }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final showInviteEmptyState = _inviteEmailController.text.trim().isEmpty;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Workspace setup')),
@@ -85,7 +122,7 @@ class _WorkspaceSetupScreenState extends State<WorkspaceSetupScreen> {
               Text('Set up your workspace', style: textTheme.headlineMedium),
               const SizedBox(height: 8),
               Text(
-                'Create your business workspace before importing data and enabling automation.',
+                'Create your business workspace so your account is linked to an organization.',
                 style: textTheme.bodyLarge?.copyWith(color: Colors.white70),
               ),
               const SizedBox(height: 20),
@@ -94,101 +131,85 @@ class _WorkspaceSetupScreenState extends State<WorkspaceSetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     TextField(
-                      controller: _workspaceNameController,
+                      controller: _businessNameController,
                       textCapitalization: TextCapitalization.words,
-                      onChanged: (_) => setState(() {}),
+                      enabled: !_isSubmitting,
+                      onChanged: (_) => setState(() {
+                        _errorMessage = null;
+                      }),
                       decoration: InputDecoration(
-                        labelText: 'Workspace name',
+                        labelText: 'Business name',
                         hintText: 'Rodriguez Contracting',
-                        errorText: _submitted ? _validateWorkspaceName() : null,
+                        errorText: _submitted ? _validateBusinessName() : null,
                       ),
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: _businessType,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'General Contractor',
-                          child: Text('General Contractor'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Remodeling',
-                          child: Text('Remodeling'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Handyman',
-                          child: Text('Handyman'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _businessType = value;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'Business type',
-                        errorText: _submitted ? _validateBusinessType() : null,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _inviteEmailController,
-                      keyboardType: TextInputType.emailAddress,
-                      onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(
-                        labelText: 'Invite teammate (optional)',
-                        hintText: 'foreman@contractor.com',
-                        errorText: _submitted ? _validateInviteEmail() : null,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _autoFollowupsEnabled,
-                      onChanged: (value) {
-                        setState(() {
-                          _autoFollowupsEnabled = value;
-                        });
-                      },
-                      title: const Text('Enable auto follow-up reminders'),
-                      subtitle: const Text('Visual toggle only for Phase 1 UI scaffold'),
+                      initialValue: _timezone,
+                      items: _timezones
+                          .map((timezone) => DropdownMenuItem<String>(
+                                value: timezone,
+                                child: Text(timezone),
+                              ))
+                          .toList(),
+                      decoration: const InputDecoration(labelText: 'Timezone'),
+                      onChanged: _isSubmitting
+                          ? null
+                          : (value) {
+                              if (value == null) {
+                                return;
+                              }
+                              setState(() {
+                                _timezone = value;
+                              });
+                            },
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
                       height: 52,
                       child: FilledButton(
-                        onPressed: _handleContinuePressed,
-                        child: const Text('Continue to Import'),
+                        onPressed: _isSubmitting ? null : _handleContinuePressed,
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Create Workspace'),
                       ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       height: 52,
                       child: OutlinedButton(
-                        onPressed: () => context.go(AppRoutes.home),
-                        child: const Text('Skip for Now'),
+                        onPressed: _isSubmitting
+                            ? null
+                            : () async {
+                                await ref.read(authProvider.notifier).signOut();
+                                if (!context.mounted) {
+                                  return;
+                                }
+                                context.go(AppRoutes.signIn);
+                              },
+                        child: const Text('Cancel and Sign Out'),
                       ),
-                    ),
-                    TextButton(
-                      onPressed: () => context.go(AppRoutes.signUp),
-                      child: const Text('Back to Sign Up'),
                     ),
                   ],
                 ),
               ),
-              if (showInviteEmptyState) ...[
+              if (_errorMessage != null) ...[
                 const SizedBox(height: 16),
-                const _StatusCard(
-                  title: 'No teammate invited yet',
-                  body: 'You can continue solo now and invite teammates later in settings.',
-                  icon: Icons.group_add_outlined,
+                _StatusCard(
+                  title: 'Workspace setup failed',
+                  body: _errorMessage!,
+                  icon: Icons.error_outline,
                 ),
               ],
-              if (_submitted && _isFormValid) ...[
+              if (_submitted && _isFormValid && _errorMessage == null && !_isSubmitting) ...[
                 const SizedBox(height: 16),
                 const _StatusCard(
-                  title: 'Validation passed',
-                  body: 'Workspace setup is ready for backend save and onboarding handoff.',
+                  title: 'Ready to create workspace',
+                  body: 'Submit to call auth-bootstrap and finish onboarding.',
                   icon: Icons.check_circle_outline,
                 ),
               ],

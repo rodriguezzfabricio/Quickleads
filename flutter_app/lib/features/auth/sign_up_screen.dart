@@ -1,22 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../app/router/app_router.dart';
 import '../../core/constants/app_tokens.dart';
+import 'providers/auth_provider.dart';
 
-class SignUpScreen extends StatefulWidget {
+class SignUpScreen extends ConsumerStatefulWidget {
   const SignUpScreen({super.key});
 
   @override
-  State<SignUpScreen> createState() => _SignUpScreenState();
+  ConsumerState<SignUpScreen> createState() => _SignUpScreenState();
 }
 
-class _SignUpScreenState extends State<SignUpScreen> {
+class _SignUpScreenState extends ConsumerState<SignUpScreen> {
   final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
   bool _submitted = false;
+  bool _isLoading = false;
+  String? _errorMessage;
 
   String? _validateFullName() {
     if (_fullNameController.text.trim().isEmpty) {
@@ -74,13 +79,53 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool get _showEmptyState =>
       _fullNameController.text.trim().isEmpty && _emailController.text.trim().isEmpty;
 
-  void _handleCreateAccountPressed() {
+  Future<void> _handleCreateAccountPressed() async {
     setState(() {
       _submitted = true;
     });
 
-    if (_isFormValid) {
-      context.push(AppRoutes.workspaceSetup);
+    if (!_isFormValid) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await ref.read(authProvider.notifier).signUp(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+            fullName: _fullNameController.text.trim(),
+          );
+
+      if (!mounted) {
+        return;
+      }
+      context.go(AppRoutes.workspaceSetup);
+    } on AuthException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = error.message;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Sign up failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = _readErrorMessage(error);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -91,6 +136,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  String _readErrorMessage(Object error) {
+    final raw = error.toString();
+    if (raw.startsWith('Exception: ')) {
+      final trimmed = raw.substring('Exception: '.length).trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+
+    return raw.isNotEmpty ? raw : 'Could not create account. Please try again.';
   }
 
   @override
@@ -119,7 +176,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     TextField(
                       controller: _fullNameController,
                       textCapitalization: TextCapitalization.words,
-                      onChanged: (_) => setState(() {}),
+                      enabled: !_isLoading,
+                      onChanged: (_) => setState(() {
+                        _errorMessage = null;
+                      }),
                       decoration: InputDecoration(
                         labelText: 'Full name',
                         hintText: 'Michael Rodriguez',
@@ -130,7 +190,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     TextField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
-                      onChanged: (_) => setState(() {}),
+                      enabled: !_isLoading,
+                      onChanged: (_) => setState(() {
+                        _errorMessage = null;
+                      }),
                       decoration: InputDecoration(
                         labelText: 'Work email',
                         hintText: 'owner@contractor.com',
@@ -141,7 +204,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     TextField(
                       controller: _passwordController,
                       obscureText: true,
-                      onChanged: (_) => setState(() {}),
+                      enabled: !_isLoading,
+                      onChanged: (_) => setState(() {
+                        _errorMessage = null;
+                      }),
                       decoration: InputDecoration(
                         labelText: 'Password',
                         hintText: 'At least 8 characters',
@@ -152,7 +218,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     TextField(
                       controller: _confirmPasswordController,
                       obscureText: true,
-                      onChanged: (_) => setState(() {}),
+                      enabled: !_isLoading,
+                      onChanged: (_) => setState(() {
+                        _errorMessage = null;
+                      }),
                       decoration: InputDecoration(
                         labelText: 'Confirm password',
                         hintText: 'Re-enter password',
@@ -163,25 +232,39 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     SizedBox(
                       height: 52,
                       child: FilledButton(
-                        onPressed: _handleCreateAccountPressed,
-                        child: const Text('Create Account'),
+                        onPressed: _isLoading ? null : _handleCreateAccountPressed,
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Create Account'),
                       ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       height: 52,
                       child: OutlinedButton(
-                        onPressed: () => context.push(AppRoutes.magicLink),
+                        onPressed: _isLoading ? null : () => context.push(AppRoutes.magicLink),
                         child: const Text('Use Magic Link Instead'),
                       ),
                     ),
                     TextButton(
-                      onPressed: () => context.go(AppRoutes.signIn),
+                      onPressed: _isLoading ? null : () => context.go(AppRoutes.signIn),
                       child: const Text('Already have an account? Sign In'),
                     ),
                   ],
                 ),
               ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 16),
+                _StatusCard(
+                  title: 'Sign up failed',
+                  body: _errorMessage!,
+                  icon: Icons.error_outline,
+                ),
+              ],
               if (_showEmptyState) ...[
                 const SizedBox(height: 16),
                 const _StatusCard(

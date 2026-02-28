@@ -37,6 +37,47 @@ interface ApiSuccess {
   data: SyncPullData;
 }
 
+interface PullEntitySpec {
+  entityType:
+    | "lead"
+    | "job"
+    | "followup_sequence"
+    | "followup_message"
+    | "call_log"
+    | "message_template"
+    | "organization"
+    | "profile";
+  tableName:
+    | "leads"
+    | "jobs"
+    | "followup_sequences"
+    | "followup_messages"
+    | "call_logs"
+    | "message_templates"
+    | "organizations"
+    | "profiles";
+  cursorColumn: "updated_at" | "created_at";
+}
+
+interface IndexedChange {
+  entity_type: PullEntitySpec["entityType"];
+  entity_id: string;
+  data: Record<string, unknown>;
+  _cursor_iso: string;
+  _cursor_ms: number;
+}
+
+const PULL_ENTITY_SPECS: PullEntitySpec[] = [
+  { entityType: "lead", tableName: "leads", cursorColumn: "updated_at" },
+  { entityType: "job", tableName: "jobs", cursorColumn: "updated_at" },
+  { entityType: "followup_sequence", tableName: "followup_sequences", cursorColumn: "updated_at" },
+  { entityType: "followup_message", tableName: "followup_messages", cursorColumn: "updated_at" },
+  { entityType: "call_log", tableName: "call_logs", cursorColumn: "created_at" },
+  { entityType: "message_template", tableName: "message_templates", cursorColumn: "updated_at" },
+  { entityType: "organization", tableName: "organizations", cursorColumn: "updated_at" },
+  { entityType: "profile", tableName: "profiles", cursorColumn: "updated_at" },
+];
+
 function jsonResponse(payload: ApiSuccess | ApiError, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
@@ -124,6 +165,56 @@ function mapError(error: unknown): { status: number; body: ApiError } {
   };
 }
 
+async function queryEntityChanges(
+  auth: Awaited<ReturnType<typeof requireAuthContext>>,
+  payload: SyncPullRequest,
+  spec: PullEntitySpec,
+): Promise<IndexedChange[]> {
+  let query = auth.client
+    .from(spec.tableName)
+    .select("*")
+    .order(spec.cursorColumn, { ascending: true })
+    .order("id", { ascending: true })
+    .limit(payload.limit);
+
+  if (payload.cursor) {
+    query = query.gt(spec.cursorColumn, payload.cursor);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new HttpError(500, "internal_error", `Failed to query ${spec.tableName} changes.`);
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  const indexedRows: IndexedChange[] = [];
+  for (const row of rows) {
+    if (typeof row?.id !== "string") {
+      continue;
+    }
+
+    const cursorRaw = row[spec.cursorColumn];
+    if (typeof cursorRaw !== "string") {
+      continue;
+    }
+
+    const cursorMs = Date.parse(cursorRaw);
+    if (Number.isNaN(cursorMs)) {
+      continue;
+    }
+
+    indexedRows.push({
+      entity_type: spec.entityType,
+      entity_id: row.id,
+      data: row as Record<string, unknown>,
+      _cursor_iso: new Date(cursorMs).toISOString(),
+      _cursor_ms: cursorMs,
+    });
+  }
+
+  return indexedRows;
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method !== "GET") {
     return jsonResponse(
@@ -159,26 +250,44 @@ Deno.serve(async (request: Request) => {
       }
     }
 
-    // --- SCAFFOLD-ONLY: no persistence logic yet ---
-    // TODO(PHASE-2-sync-read): Query tenant-scoped table deltas since cursor
-    //   with deterministic ordering (updated_at, id).
-    // TODO(PHASE-2-sync-pagination): Return paginated change batches with stable
-    //   next_cursor and has_more semantics capped at requested limit.
-    // TODO(PHASE-2-sync-read): On success, return 200 with SyncPullData including
-    //   changes array and pagination metadata.
-
-    return jsonResponse(
-      {
-        ok: false,
-        error: {
-          code: "not_implemented",
-          message:
-            "sync-pull is scaffold-only and not production-ready. " +
-            "Auth and validation passed but no changes were queried.",
-        },
-      },
-      501,
+    const changesByEntity = await Promise.all(
+      PULL_ENTITY_SPECS.map((spec) => queryEntityChanges(auth, payload, spec)),
     );
+
+    const merged = changesByEntity
+      .flat()
+      .sort((a, b) => {
+        if (a._cursor_ms !== b._cursor_ms) {
+          return a._cursor_ms - b._cursor_ms;
+        }
+
+        const idCompare = a.entity_id.localeCompare(b.entity_id);
+        if (idCompare !== 0) {
+          return idCompare;
+        }
+
+        return a.entity_type.localeCompare(b.entity_type);
+      });
+
+    const page = merged.slice(0, payload.limit);
+    const nextCursor =
+      page.length > 0 ? page[page.length - 1]._cursor_iso : (payload.cursor ?? new Date().toISOString());
+
+    return jsonResponse({
+      ok: true,
+      data: {
+        organization_id: auth.organizationId,
+        requested_cursor: payload.cursor ?? null,
+        next_cursor: nextCursor,
+        limit: payload.limit,
+        changes: page.map((change) => ({
+          entity_type: change.entity_type,
+          entity_id: change.entity_id,
+          data: change.data,
+        })),
+        has_more: page.length === payload.limit,
+      },
+    });
   } catch (error) {
     const mappedError = mapError(error);
     return jsonResponse(mappedError.body, mappedError.status);
