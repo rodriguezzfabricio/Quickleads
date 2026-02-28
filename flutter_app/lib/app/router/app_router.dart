@@ -1,6 +1,8 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/magic_link_screen.dart';
+import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/sign_in_screen.dart';
 import '../../features/auth/sign_up_screen.dart';
 import '../../features/calls/daily_sweep_screen.dart';
@@ -41,9 +43,47 @@ class AppRoutes {
   static const settings = '/settings';
 }
 
-class AppRouter {
-  static final router = GoRouter(
+bool _isAuthRoute(String location) {
+  return location == AppRoutes.signIn ||
+      location == AppRoutes.signUp ||
+      location == AppRoutes.magicLink;
+}
+
+final appRouterProvider = Provider<GoRouter>((ref) {
+  final authAsync = ref.watch(authProvider);
+
+  return GoRouter(
     initialLocation: AppRoutes.home,
+    redirect: (_, state) {
+      if (authAsync.isLoading) {
+        return null;
+      }
+
+      final authState = authAsync.valueOrNull ?? const AppAuthState.unauthenticated();
+      final location = state.matchedLocation;
+      final isOnAuthRoute = _isAuthRoute(location);
+      final isWorkspaceSetup = location == AppRoutes.workspaceSetup;
+
+      switch (authState.status) {
+        case AppAuthStatus.loading:
+          return null;
+        case AppAuthStatus.unauthenticated:
+          if (isOnAuthRoute) {
+            return null;
+          }
+          return AppRoutes.signIn;
+        case AppAuthStatus.needsWorkspace:
+          if (isWorkspaceSetup) {
+            return null;
+          }
+          return AppRoutes.workspaceSetup;
+        case AppAuthStatus.authenticated:
+          if (isOnAuthRoute || isWorkspaceSetup) {
+            return AppRoutes.home;
+          }
+          return null;
+      }
+    },
     routes: [
       GoRoute(path: AppRoutes.home, builder: (_, __) => const HomeScreen()),
       GoRoute(path: AppRoutes.signIn, builder: (_, __) => const SignInScreen()),
@@ -87,4 +127,4 @@ class AppRouter {
       GoRoute(path: AppRoutes.settings, builder: (_, __) => const SettingsScreen()),
     ],
   );
-}
+});

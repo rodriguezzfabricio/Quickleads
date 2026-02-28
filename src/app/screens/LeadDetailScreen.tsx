@@ -20,8 +20,6 @@ import { format } from 'date-fns';
 import { useLeads } from '../state/LeadsContext';
 import { EstimateSentConfirmDialog } from '../components/EstimateSentConfirmDialog';
 import { ActionConfirmDialog } from '../components/ActionConfirmDialog';
-import { useInlineSavedIndicator } from '../hooks/useInlineSavedIndicator';
-import { InlineSavedIndicator } from '../components/InlineSavedIndicator';
 
 const statusOptions: { value: LeadStatus; label: string }[] = [
   { value: 'call-back-now', label: 'New / Call Back' },
@@ -142,7 +140,6 @@ export function LeadDetailScreen() {
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showColdConfirm, setShowColdConfirm] = useState(false);
-  const { showSaved, isFieldSaved } = useInlineSavedIndicator();
 
   if (!lead)
     return (
@@ -162,11 +159,14 @@ export function LeadDetailScreen() {
   };
   const handleStatusChange = (nextStatus: LeadStatus) => {
     if (nextStatus === 'cold') {
-      // Marking cold stops monetized follow-ups, so it requires explicit confirmation.
       setShowColdConfirm(true);
       return;
     }
-    // Keep status edits and pipeline cards in sync through shared state.
+    if (nextStatus === 'won') {
+      // Route through markLeadWon so follow-ups are stopped and celebration triggers.
+      handleMarkAsWon();
+      return;
+    }
     updateLeadStatus(lead.id, nextStatus);
   };
   const handleEstimateSentConfirm = () => {
@@ -231,7 +231,7 @@ export function LeadDetailScreen() {
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
-                showSaved('name');
+
               }}
               className="text-[34px] font-bold text-foreground tracking-tight bg-transparent w-full focus:outline-none border-b border-system-blue/50 pb-0.5"
               autoFocus
@@ -246,7 +246,7 @@ export function LeadDetailScreen() {
               {name}
             </motion.h1>
           )}
-          <InlineSavedIndicator visible={isFieldSaved('name')} />
+
         </div>
 
         <div className="px-5 space-y-4 pt-2">
@@ -264,13 +264,13 @@ export function LeadDetailScreen() {
                   value={phone}
                   onChange={(e) => {
                     setPhone(e.target.value);
-                    showSaved('phone');
+
                   }}
                   type="tel"
                   placeholder="Phone number"
                   className="flex-1 bg-transparent text-[17px] text-foreground focus:outline-none placeholder:text-muted-foreground"
                 />
-                <InlineSavedIndicator visible={isFieldSaved('phone')} />
+
               </div>
             ) : (
               <button
@@ -470,14 +470,12 @@ export function LeadDetailScreen() {
                         <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">
                           {f.label}
                         </label>
-                        <InlineSavedIndicator visible={isFieldSaved(f.label.toLowerCase())} />
                       </div>
                       <input
                         type={f.type}
                         value={f.val}
                         onChange={(e) => {
                           f.set(e.target.value);
-                          showSaved(f.label.toLowerCase());
                         }}
                         placeholder={f.ph}
                         className="w-full p-4 glass-elevated rounded-2xl focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground text-[17px]"
@@ -489,13 +487,11 @@ export function LeadDetailScreen() {
                       <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">
                         Notes
                       </label>
-                      <InlineSavedIndicator visible={isFieldSaved('notes')} />
                     </div>
                     <textarea
                       value={notes}
                       onChange={(e) => {
                         setNotes(e.target.value);
-                        showSaved('notes');
                       }}
                       placeholder="Add notes..."
                       rows={3}

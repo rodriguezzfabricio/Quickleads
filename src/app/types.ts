@@ -1,4 +1,29 @@
 // Type definitions for the ContractorComm app
+//
+// DB ENUM MAPPING — The React prototype uses display-friendly values (hyphens).
+// The Supabase database uses snake_case values. The Flutter app and sync layer
+// must use the DB values. This mapping documents the correspondence:
+//
+//   Frontend (React/Flutter UI)  →  Database (Supabase Postgres)
+//   ─────────────────────────────────────────────────────────────
+//   LeadStatus:
+//     'call-back-now'            →  'new_callback'
+//     'estimate-sent'            →  'estimate_sent'
+//     'won'                      →  'won'
+//     'cold'                     →  'cold'
+//
+//   JobPhase:
+//     'demo'                     →  'demo'
+//     'rough'                    →  'rough'
+//     'electrical-plumbing'      →  'electrical_plumbing'
+//     'finishing'                →  'finishing'
+//     'walkthrough'              →  'walkthrough'
+//     'complete'                 →  'complete'
+//
+//   JobStatus:
+//     'on-track'                 →  'green'
+//     'needs-attention'          →  'yellow'
+//     'behind'                   →  'red'
 
 export type LeadStatus = 'call-back-now' | 'estimate-sent' | 'won' | 'cold';
 

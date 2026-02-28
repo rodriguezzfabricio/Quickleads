@@ -6,8 +6,6 @@ import { PhaseProgress } from '../components/PhaseProgress';
 import { format } from 'date-fns';
 import { motion } from 'motion/react';
 import { useLeads } from '../state/LeadsContext';
-import { useInlineSavedIndicator } from '../hooks/useInlineSavedIndicator';
-import { InlineSavedIndicator } from '../components/InlineSavedIndicator';
 
 const statusOptions: { value: JobStatus; label: string }[] = [
   { value: 'on-track', label: 'On Track' },
@@ -25,7 +23,6 @@ export function JobDetailScreen() {
   const [estimatedCompletion, setEstimatedCompletion] = useState(job?.estimatedCompletion ? format(job.estimatedCompletion, 'yyyy-MM-dd') : '');
   const [notes, setNotes] = useState(job?.notes || '');
   const [newNote, setNewNote] = useState('');
-  const { showSaved, isFieldSaved } = useInlineSavedIndicator();
 
   if (!job) return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-muted-foreground">Job not found</p></div>;
 
@@ -33,7 +30,6 @@ export function JobDetailScreen() {
     if (newNote.trim()) {
       setNotes(notes ? `${newNote}\n\n---\n\n${notes}` : newNote);
       setNewNote('');
-      showSaved('notes');
     }
   };
 
@@ -51,28 +47,25 @@ export function JobDetailScreen() {
         <div className="px-5 space-y-4 pt-2">
           {/* Phase */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-elevated rounded-2xl p-4">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3">
               <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">Phase</label>
-              <InlineSavedIndicator visible={isFieldSaved('phase')} />
             </div>
-            <PhaseProgress currentPhase={currentPhase} interactive onPhaseSelect={(p: JobPhase) => { setCurrentPhase(p); showSaved('phase'); }} />
+            <PhaseProgress currentPhase={currentPhase} interactive onPhaseSelect={(p: JobPhase) => { setCurrentPhase(p); }} />
           </motion.div>
 
           {/* Completion + Status */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-elevated rounded-2xl overflow-hidden divide-y divide-white/[0.04]">
             <div className="p-4">
-              <div className="mb-1 flex items-center justify-between">
+              <div className="mb-1">
                 <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">Est. Completion</label>
-                <InlineSavedIndicator visible={isFieldSaved('estimatedCompletion')} />
               </div>
-              <input type="date" value={estimatedCompletion} onChange={(e) => { setEstimatedCompletion(e.target.value); showSaved('estimatedCompletion'); }} className="w-full bg-transparent text-[17px] text-foreground focus:outline-none cursor-pointer" />
+              <input type="date" value={estimatedCompletion} onChange={(e) => { setEstimatedCompletion(e.target.value); }} className="w-full bg-transparent text-[17px] text-foreground focus:outline-none cursor-pointer" />
             </div>
             <div className="p-4">
-              <div className="mb-1 flex items-center justify-between">
+              <div className="mb-1">
                 <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">Status</label>
-                <InlineSavedIndicator visible={isFieldSaved('status')} />
               </div>
-              <select value={status} onChange={(e) => { setStatus(e.target.value as JobStatus); showSaved('status'); }} className="w-full bg-transparent text-[17px] text-foreground appearance-none focus:outline-none cursor-pointer">
+              <select value={status} onChange={(e) => { setStatus(e.target.value as JobStatus); }} className="w-full bg-transparent text-[17px] text-foreground appearance-none focus:outline-none cursor-pointer">
                 {statusOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -91,9 +84,8 @@ export function JobDetailScreen() {
 
           {/* Notes */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3">
               <label className="block text-[11px] text-muted-foreground uppercase tracking-wider">Notes</label>
-              <InlineSavedIndicator visible={isFieldSaved('notes')} />
             </div>
             <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Add a note..." rows={3} className="w-full p-4 glass-elevated rounded-2xl resize-none focus:outline-none focus:ring-1 focus:ring-system-blue/50 text-foreground placeholder:text-muted-foreground text-[17px] mb-2" />
             <button onClick={handleAddNote} disabled={!newNote.trim()} className="px-4 py-2 bg-system-blue text-white rounded-xl text-[13px] font-semibold disabled:opacity-40 flex items-center gap-1">
