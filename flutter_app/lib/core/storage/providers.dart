@@ -9,6 +9,7 @@ import 'daos/jobs_dao.dart';
 import 'daos/followups_dao.dart';
 import 'daos/call_logs_dao.dart';
 import 'daos/templates_dao.dart';
+import 'debug/mock_data_seed.dart';
 
 // ── Database ────────────────────────────────────────────────────────
 
@@ -108,8 +109,8 @@ final jobForLeadProvider = StreamProvider.family<LocalJob?, String>(
 );
 
 /// Watch jobs for an org filtered by health status.
-final jobsByHealthStatusProvider =
-    StreamProvider.family<List<LocalJob>, ({String orgId, String healthStatus})>(
+final jobsByHealthStatusProvider = StreamProvider.family<List<LocalJob>,
+    ({String orgId, String healthStatus})>(
   (ref, params) {
     return ref
         .watch(jobsDaoProvider)
@@ -121,5 +122,33 @@ final jobsByHealthStatusProvider =
 final jobByIdProvider = StreamProvider.family<LocalJob?, String>(
   (ref, jobId) {
     return ref.watch(jobsDaoProvider).watchJobById(jobId);
+  },
+);
+
+/// Watch follow-up sequence for a lead.
+final followupSequenceByLeadProvider =
+    StreamProvider.family<LocalFollowupSequence?, String>(
+  (ref, leadId) {
+    return ref.watch(followupsDaoProvider).watchSequenceByLeadId(leadId);
+  },
+);
+
+/// Watch unknown calls for daily sweep review.
+final unknownCallsProvider = StreamProvider.family<List<LocalCallLog>, String>(
+  (ref, orgId) {
+    return ref.watch(callLogsDaoProvider).watchUnknownCalls(orgId);
+  },
+);
+
+/// Debug-only seeding hook so simulator has realistic local data.
+final debugMockDataSeedProvider = FutureProvider.family<void, String>(
+  (ref, orgId) async {
+    if (orgId.isEmpty) {
+      return;
+    }
+    await seedDebugMockData(
+      db: ref.read(appDatabaseProvider),
+      organizationId: orgId,
+    );
   },
 );

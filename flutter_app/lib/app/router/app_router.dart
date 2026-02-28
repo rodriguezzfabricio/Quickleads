@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/constants/app_tokens.dart';
+import '../../core/storage/providers.dart';
 import '../../features/auth/confirm_email_screen.dart';
 import '../../features/auth/magic_link_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
@@ -133,24 +135,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: AppRoutes.jobs,
-                builder: (_, __) => const JobsScreen(),
+                path: AppRoutes.clients,
+                builder: (_, __) => const ClientsScreen(),
               ),
             ],
           ),
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: AppRoutes.settings,
-                builder: (_, __) => const SettingsScreen(),
+                path: AppRoutes.jobs,
+                builder: (_, __) => const JobsScreen(),
               ),
             ],
           ),
         ],
       ),
       GoRoute(
-          path: AppRoutes.leadCapture,
-          builder: (_, __) => const LeadCaptureScreen()),
+        path: AppRoutes.leadCapture,
+        builder: (_, state) => LeadCaptureScreen(
+          initialPhone: state.uri.queryParameters['phone'],
+        ),
+      ),
       GoRoute(
         path: AppRoutes.leadDetail,
         builder: (_, state) =>
@@ -162,10 +167,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             JobDetailScreen(jobId: state.pathParameters['jobId']),
       ),
       GoRoute(
-          path: AppRoutes.clients, builder: (_, __) => const ClientsScreen()),
-      GoRoute(
         path: AppRoutes.clientCreate,
-        builder: (_, __) => const ClientDetailScreen(isCreateFlow: true),
+        builder: (_, state) => ClientDetailScreen(
+          isCreateFlow: true,
+          prefillName: state.uri.queryParameters['name'],
+          prefillPhone: state.uri.queryParameters['phone'],
+        ),
       ),
       GoRoute(
         path: AppRoutes.clientDetail,
@@ -174,11 +181,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.projectCreate,
-        builder: (_, __) => const ProjectCreationScreen(),
+        builder: (_, state) => ProjectCreationScreen(
+          prefilledLeadId: state.uri.queryParameters['leadId'],
+          prefillName: state.uri.queryParameters['name'],
+          prefillPhone: state.uri.queryParameters['phone'],
+          prefillJobType: state.uri.queryParameters['jobType'],
+        ),
       ),
       GoRoute(
         path: AppRoutes.dailySweepReview,
-        builder: (_, __) => const DailySweepScreen(),
+        builder: (_, state) => DailySweepScreen(
+          forcedPlatform: state.uri.queryParameters['platform'],
+        ),
       ),
       GoRoute(
           path: AppRoutes.followups,
@@ -190,54 +204,304 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: AppRoutes.onboarding,
           builder: (_, __) => const DataImportScreen()),
+      GoRoute(
+          path: AppRoutes.settings, builder: (_, __) => const SettingsScreen()),
     ],
   );
 });
 
-class _AppShell extends StatefulWidget {
+class _AppShell extends ConsumerStatefulWidget {
   const _AppShell({required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
 
   @override
-  State<_AppShell> createState() => _AppShellState();
+  ConsumerState<_AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<_AppShell> {
+class _AppShellState extends ConsumerState<_AppShell> {
+  Future<void> _openCreateSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF141417),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.1),
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Create',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.outline,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _CreateActionButton(
+                    label: '+ New Lead',
+                    icon: Icons.phone_outlined,
+                    tint: AppTokens.primary,
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      context.push(AppRoutes.leadCapture);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  _CreateActionButton(
+                    label: '+ New Project',
+                    icon: Icons.assignment_outlined,
+                    tint: AppTokens.success,
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      context.push(AppRoutes.projectCreate);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final orgId = ref.watch(authProvider).valueOrNull?.profile?.organizationId;
+    if (orgId != null && orgId.isNotEmpty) {
+      ref.watch(debugMockDataSeedProvider(orgId));
+    }
+
     return Scaffold(
       body: widget.navigationShell,
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: _ShellBottomNav(
         selectedIndex: widget.navigationShell.currentIndex,
-        onDestinationSelected: (index) {
+        onSelectIndex: (index) {
           widget.navigationShell.goBranch(
             index,
             initialLocation: index == widget.navigationShell.currentIndex,
           );
         },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Dashboard',
+        onCreatePressed: _openCreateSheet,
+      ),
+    );
+  }
+}
+
+class _ShellBottomNav extends StatelessWidget {
+  const _ShellBottomNav({
+    required this.selectedIndex,
+    required this.onSelectIndex,
+    required this.onCreatePressed,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelectIndex;
+  final VoidCallback onCreatePressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.62),
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withValues(alpha: 0.06),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Leads',
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 82,
+          child: Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _ShellNavItem(
+                        icon: Icons.home_outlined,
+                        selectedIcon: Icons.home_rounded,
+                        label: 'Home',
+                        selected: selectedIndex == 0,
+                        onTap: () => onSelectIndex(0),
+                      ),
+                    ),
+                    Expanded(
+                      child: _ShellNavItem(
+                        icon: Icons.groups_outlined,
+                        selectedIcon: Icons.groups,
+                        label: 'Leads',
+                        selected: selectedIndex == 1,
+                        onTap: () => onSelectIndex(1),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Transform.translate(
+                  offset: const Offset(0, -8),
+                  child: GestureDetector(
+                    onTap: onCreatePressed,
+                    child: Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: AppTokens.primary,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0xFF0A0A0A),
+                          width: 3,
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color.fromRGBO(0, 122, 255, 0.4),
+                            blurRadius: 16,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.add_rounded,
+                        size: 34,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _ShellNavItem(
+                        icon: Icons.account_circle_outlined,
+                        selectedIcon: Icons.account_circle,
+                        label: 'Clients',
+                        selected: selectedIndex == 2,
+                        onTap: () => onSelectIndex(2),
+                      ),
+                    ),
+                    Expanded(
+                      child: _ShellNavItem(
+                        icon: Icons.work_outline,
+                        selectedIcon: Icons.work,
+                        label: 'Jobs',
+                        selected: selectedIndex == 3,
+                        onTap: () => onSelectIndex(3),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.work_outline),
-            selectedIcon: Icon(Icons.work),
-            label: 'Jobs',
+        ),
+      ),
+    );
+  }
+}
+
+class _ShellNavItem extends StatelessWidget {
+  const _ShellNavItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint =
+        selected ? AppTokens.primary : Colors.white.withValues(alpha: 0.35);
+    final iconData = selected ? selectedIcon : icon;
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(iconData, size: 23, color: tint),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                color: tint,
+                fontSize: 10,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateActionButton extends StatelessWidget {
+  const _CreateActionButton({
+    required this.label,
+    required this.icon,
+    required this.tint,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color tint;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: tint.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: tint.withValues(alpha: 0.35)),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Settings',
+          child: Row(
+            children: [
+              Icon(icon, size: 22, color: tint),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
