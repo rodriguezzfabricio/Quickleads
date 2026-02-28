@@ -55,21 +55,29 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
         .getSingleOrNull();
   }
 
-  /// Watch won leads that have no linked job (for Home screen reminder).
-  Stream<List<LocalLead>> watchWonLeadsWithoutProject(String orgId) {
-    // A lead is "won without project" when status=won and no job
-    // references it via lead_id.
+  /// Watch won leads that have no linked active job (for Home screen reminder).
+  Stream<List<LocalLead>> watchWonLeadsWithoutJob(String orgId) {
+    // A lead is "won without job" when status=won and no active
+    // local job references it via lead_id.
     return customSelect(
       'SELECT * FROM local_leads '
       'WHERE organization_id = ? '
       'AND status = \'won\' '
       'AND deleted_at IS NULL '
-      'AND id NOT IN (SELECT lead_id FROM local_jobs WHERE lead_id IS NOT NULL)',
+      'AND id NOT IN ('
+      'SELECT lead_id FROM local_jobs '
+      'WHERE lead_id IS NOT NULL AND deleted_at IS NULL'
+      ')',
       variables: [Variable.withString(orgId)],
       readsFrom: {localLeads, db.localJobs},
     ).watch().map((rows) {
       return rows.map((row) => localLeads.map(row.data)).toList();
     });
+  }
+
+  /// Backward-compatible alias for older call sites.
+  Stream<List<LocalLead>> watchWonLeadsWithoutProject(String orgId) {
+    return watchWonLeadsWithoutJob(orgId);
   }
 
   // ── Mutations ────────────────────────────────────────────────────
@@ -97,9 +105,11 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
     int currentVersion,
   ) {
     return transaction(() async {
+      final nextVersion = currentVersion + 1;
       await (update(localLeads)..where((l) => l.id.equals(leadId))).write(
         LocalLeadsCompanion(
           status: Value(newStatus),
+          version: Value(nextVersion),
           updatedAt: Value(DateTime.now()),
           needsSync: const Value(true),
         ),
@@ -109,7 +119,11 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
         entityId: leadId,
         mutationType: 'status_transition',
         baseVersion: currentVersion,
-        payload: {'status': newStatus},
+        payload: {
+          'id': leadId,
+          'status': _mapLeadStatusForSync(newStatus),
+          'version': nextVersion,
+        },
       );
     });
   }
@@ -209,8 +223,15 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
       'job_type': c.jobType.value,
       if (c.notes.present) 'notes': c.notes.value,
       if (c.status.present) 'status': c.status.value,
-      if (c.followupState.present)
-        'followup_state': c.followupState.value,
+      if (c.followupState.present) 'followup_state': c.followupState.value,
+    };
+  }
+
+  String _mapLeadStatusForSync(String status) {
+    return switch (status) {
+      'quoted' => 'estimate_sent',
+      'lost' => 'cold',
+      _ => status,
     };
   }
 }

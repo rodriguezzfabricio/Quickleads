@@ -34,6 +34,33 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
         .watchSingleOrNull();
   }
 
+  /// Watch the most recently updated active job linked to a lead.
+  Stream<LocalJob?> watchJobByLeadId(String leadId) {
+    return (select(localJobs)
+          ..where((j) => j.leadId.equals(leadId))
+          ..where((j) => j.deletedAt.isNull())
+          ..orderBy([
+            (j) => OrderingTerm.desc(j.updatedAt),
+          ])
+          ..limit(1))
+        .watchSingleOrNull();
+  }
+
+  /// Watch all active (non-deleted) jobs for an org filtered by health status.
+  Stream<List<LocalJob>> watchJobsByHealthStatus(
+    String orgId,
+    String healthStatus,
+  ) {
+    return (select(localJobs)
+          ..where((j) => j.organizationId.equals(orgId))
+          ..where((j) => j.healthStatus.equals(healthStatus))
+          ..where((j) => j.deletedAt.isNull())
+          ..orderBy([
+            (j) => OrderingTerm.desc(j.updatedAt),
+          ]))
+        .watch();
+  }
+
   /// Get a single job by ID (one-shot).
   Future<LocalJob?> getJobById(String jobId) {
     return (select(localJobs)..where((j) => j.id.equals(jobId)))
@@ -166,6 +193,8 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
   }
 
   Map<String, dynamic> _jobCompanionToJson(LocalJobsCompanion c) {
+    final estimatedCompletionDate = c.estimatedCompletionDate.value;
+
     return {
       'id': c.id.value,
       'organization_id': c.organizationId.value,
@@ -174,6 +203,8 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
       'job_type': c.jobType.value,
       if (c.phase.present) 'phase': c.phase.value,
       if (c.healthStatus.present) 'health_status': c.healthStatus.value,
+      if (c.estimatedCompletionDate.present && estimatedCompletionDate != null)
+        'estimated_completion_date': estimatedCompletionDate.toIso8601String(),
     };
   }
 }

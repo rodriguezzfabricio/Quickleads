@@ -1,6 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/auth/confirm_email_screen.dart';
 import '../../features/auth/magic_link_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/sign_in_screen.dart';
@@ -26,6 +28,7 @@ class AppRoutes {
   static const signIn = '/sign-in';
   static const signUp = '/sign-up';
   static const magicLink = '/magic-link';
+  static const confirmEmail = '/confirm-email';
   static const workspaceSetup = '/onboarding/workspace-setup';
   static const leads = '/leads';
   static const leadCapture = '/lead-capture';
@@ -46,7 +49,8 @@ class AppRoutes {
 bool _isAuthRoute(String location) {
   return location == AppRoutes.signIn ||
       location == AppRoutes.signUp ||
-      location == AppRoutes.magicLink;
+      location == AppRoutes.magicLink ||
+      location == AppRoutes.confirmEmail;
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -59,7 +63,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return null;
       }
 
-      final authState = authAsync.valueOrNull ?? const AppAuthState.unauthenticated();
+      final authState =
+          authAsync.valueOrNull ?? const AppAuthState.unauthenticated();
       final location = state.matchedLocation;
       final isOnAuthRoute = _isAuthRoute(location);
       final isWorkspaceSetup = location == AppRoutes.workspaceSetup;
@@ -72,6 +77,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             return null;
           }
           return AppRoutes.signIn;
+        case AppAuthStatus.awaitingEmailConfirmation:
+          if (location == AppRoutes.confirmEmail) {
+            return null;
+          }
+          return AppRoutes.confirmEmail;
         case AppAuthStatus.needsWorkspace:
           if (isWorkspaceSetup) {
             return null;
@@ -85,30 +95,82 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
     },
     routes: [
-      GoRoute(path: AppRoutes.home, builder: (_, __) => const HomeScreen()),
       GoRoute(path: AppRoutes.signIn, builder: (_, __) => const SignInScreen()),
       GoRoute(path: AppRoutes.signUp, builder: (_, __) => const SignUpScreen()),
-      GoRoute(path: AppRoutes.magicLink, builder: (_, __) => const MagicLinkScreen()),
-      GoRoute(path: AppRoutes.workspaceSetup, builder: (_, __) => const WorkspaceSetupScreen()),
-      GoRoute(path: AppRoutes.leads, builder: (_, __) => const LeadsScreen()),
-      GoRoute(path: AppRoutes.leadCapture, builder: (_, __) => const LeadCaptureScreen()),
+      GoRoute(
+          path: AppRoutes.magicLink,
+          builder: (_, __) => const MagicLinkScreen()),
+      GoRoute(
+          path: AppRoutes.confirmEmail,
+          builder: (_, __) => const ConfirmEmailScreen()),
+      GoRoute(
+          path: AppRoutes.workspaceSetup,
+          builder: (_, __) => const WorkspaceSetupScreen()),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return _AppShell(navigationShell: navigationShell);
+        },
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.home,
+                builder: (_, __) => const HomeScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.leads,
+                builder: (_, state) {
+                  final initialStatus = state.uri.queryParameters['status'];
+                  return LeadsScreen(initialStatus: initialStatus);
+                },
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.jobs,
+                builder: (_, __) => const JobsScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.settings,
+                builder: (_, __) => const SettingsScreen(),
+              ),
+            ],
+          ),
+        ],
+      ),
+      GoRoute(
+          path: AppRoutes.leadCapture,
+          builder: (_, __) => const LeadCaptureScreen()),
       GoRoute(
         path: AppRoutes.leadDetail,
-        builder: (_, state) => LeadDetailScreen(leadId: state.pathParameters['leadId']),
+        builder: (_, state) =>
+            LeadDetailScreen(leadId: state.pathParameters['leadId']),
       ),
-      GoRoute(path: AppRoutes.jobs, builder: (_, __) => const JobsScreen()),
       GoRoute(
         path: AppRoutes.jobDetail,
-        builder: (_, state) => JobDetailScreen(jobId: state.pathParameters['jobId']),
+        builder: (_, state) =>
+            JobDetailScreen(jobId: state.pathParameters['jobId']),
       ),
-      GoRoute(path: AppRoutes.clients, builder: (_, __) => const ClientsScreen()),
+      GoRoute(
+          path: AppRoutes.clients, builder: (_, __) => const ClientsScreen()),
       GoRoute(
         path: AppRoutes.clientCreate,
         builder: (_, __) => const ClientDetailScreen(isCreateFlow: true),
       ),
       GoRoute(
         path: AppRoutes.clientDetail,
-        builder: (_, state) => ClientDetailScreen(clientId: state.pathParameters['clientId']),
+        builder: (_, state) =>
+            ClientDetailScreen(clientId: state.pathParameters['clientId']),
       ),
       GoRoute(
         path: AppRoutes.projectCreate,
@@ -118,13 +180,65 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.dailySweepReview,
         builder: (_, __) => const DailySweepScreen(),
       ),
-      GoRoute(path: AppRoutes.followups, builder: (_, __) => const FollowupsScreen()),
+      GoRoute(
+          path: AppRoutes.followups,
+          builder: (_, __) => const FollowupsScreen()),
       GoRoute(
         path: AppRoutes.followupSettings,
         builder: (_, __) => const FollowupSettingsScreen(),
       ),
-      GoRoute(path: AppRoutes.onboarding, builder: (_, __) => const DataImportScreen()),
-      GoRoute(path: AppRoutes.settings, builder: (_, __) => const SettingsScreen()),
+      GoRoute(
+          path: AppRoutes.onboarding,
+          builder: (_, __) => const DataImportScreen()),
     ],
   );
 });
+
+class _AppShell extends StatefulWidget {
+  const _AppShell({required this.navigationShell});
+
+  final StatefulNavigationShell navigationShell;
+
+  @override
+  State<_AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<_AppShell> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: widget.navigationShell,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: widget.navigationShell.currentIndex,
+        onDestinationSelected: (index) {
+          widget.navigationShell.goBranch(
+            index,
+            initialLocation: index == widget.navigationShell.currentIndex,
+          );
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.people_outline),
+            selectedIcon: Icon(Icons.people),
+            label: 'Leads',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.work_outline),
+            selectedIcon: Icon(Icons.work),
+            label: 'Jobs',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: 'Settings',
+          ),
+        ],
+      ),
+    );
+  }
+}
