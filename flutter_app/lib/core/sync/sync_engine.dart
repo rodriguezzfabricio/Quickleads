@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../storage/app_database.dart';
+import 'device_registration_service.dart';
 import 'sync_status.dart';
 
 /// Push/pull sync orchestrator.
@@ -18,10 +19,12 @@ class SyncEngine {
   SyncEngine({
     required this.db,
     required this.supabaseClient,
+    required this.deviceRegistrationService,
   });
 
   final AppDatabase db;
   final SupabaseClient supabaseClient;
+  final DeviceRegistrationService deviceRegistrationService;
 
   final _statusController = StreamController<SyncStatus>.broadcast();
   final Connectivity _connectivity = Connectivity();
@@ -112,6 +115,14 @@ class SyncEngine {
 
     if (pending.isEmpty) return SyncResult.success();
 
+    final deviceId = await _resolveDeviceId();
+    if (deviceId == null || deviceId.isEmpty) {
+      await _revertTooPending(pending.map((e) => e.id).toList());
+      return SyncResult.error(
+        'Could not register this device for sync. Please sign in again.',
+      );
+    }
+
     // Mark as in_flight.
     final ids = pending.map((a) => a.id).toList();
     await (db.update(db.pendingSyncActions)..where((a) => a.id.isIn(ids)))
@@ -137,7 +148,7 @@ class SyncEngine {
       final response = await supabaseClient.functions.invoke(
         'sync-push',
         body: {
-          'device_id': _getDeviceId(),
+          'device_id': deviceId,
           'mutations': mutations,
         },
       );
@@ -210,6 +221,7 @@ class SyncEngine {
 
   /// Pull server changes since our last cursor.
   Future<SyncResult> _pullServerChanges() async {
+    final deviceId = await _resolveDeviceId();
     int totalPulled = 0;
     bool hasMore = true;
 
@@ -220,6 +232,7 @@ class SyncEngine {
         final queryParams = <String, String>{
           'limit': '100',
           if (cursor != null) 'cursor': cursor,
+          if (deviceId != null && deviceId.isNotEmpty) 'device_id': deviceId,
         };
 
         final response = await supabaseClient.functions.invoke(
@@ -558,6 +571,16 @@ class SyncEngine {
           lastSyncedAt: Value(now),
         ));
         break;
+      case 'message_template':
+        await (db.update(db.localMessageTemplates)
+              ..where((t) => t.id.equals(entityId)))
+            .write(
+          LocalMessageTemplatesCompanion(
+            needsSync: const Value(false),
+            lastSyncedAt: Value(now),
+          ),
+        );
+        break;
     }
   }
 
@@ -578,10 +601,13 @@ class SyncEngine {
         );
   }
 
-  /// Returns a placeholder device ID.
-  /// Will be replaced with real device registration in Phase 1 (auth).
-  String _getDeviceId() {
-    // TODO(phase-1): Use actual registered device ID from auth bootstrap.
-    return '00000000-0000-0000-0000-000000000000';
+  Future<String?> _resolveDeviceId() async {
+    final existing =
+        await deviceRegistrationService.readRegisteredServerDeviceId();
+    if (existing != null && existing.isNotEmpty) {
+      return existing;
+    }
+
+    return deviceRegistrationService.ensureRegisteredForCurrentSession();
   }
 }

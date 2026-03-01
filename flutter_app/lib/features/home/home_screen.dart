@@ -70,10 +70,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     setState(() => _updatingLeadId = lead.id);
     try {
-      await ref.read(leadsDaoProvider).markEstimateSent(
-            lead.id,
-            lead.version,
-          );
+      await ref.read(leadActionsServiceProvider).markEstimateSent(lead);
     } catch (error) {
       if (!mounted) {
         return;

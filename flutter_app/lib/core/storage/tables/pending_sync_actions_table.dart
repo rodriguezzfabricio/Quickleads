@@ -10,7 +10,8 @@ import 'package:drift/drift.dart';
 class PendingSyncActions extends Table {
   TextColumn get id => text()();
   TextColumn get clientMutationId => text()();
-  TextColumn get entityType => text()(); // 'lead' | 'job' | etc.
+  TextColumn get entityType =>
+      text()(); // 'lead' | 'job' | 'followup_sequence' | 'call_log' | 'message_template' | etc.
   TextColumn get entityId => text().nullable()();
   TextColumn get mutationType =>
       text()(); // 'insert' | 'update' | 'delete' | 'status_transition'

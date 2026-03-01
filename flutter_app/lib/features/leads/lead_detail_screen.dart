@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../app/router/app_router.dart';
 import '../../core/domain/lead_status_mapper.dart';
+import '../../core/notifications/notification_service.dart';
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
 
@@ -133,6 +134,17 @@ class _LeadDetailBodyState extends ConsumerState<_LeadDetailBody> {
               'stopped',
               widget.lead.version + 1,
             );
+        final sequence = await ref
+            .read(followupsDaoProvider)
+            .getSequenceByLeadId(widget.lead.id);
+        if (sequence != null) {
+          await ref
+              .read(followupsDaoProvider)
+              .updateSequenceState(sequence.id, 'stopped');
+        }
+        await NotificationService.instance.cancelFollowUpNotifications(
+          leadId: widget.lead.id,
+        );
       }
 
       if (normalizedNew == LeadStatusMapper.wonDb && mounted) {
@@ -225,10 +237,7 @@ class _LeadDetailBodyState extends ConsumerState<_LeadDetailBody> {
 
     setState(() => _busyAction = true);
     try {
-      await ref.read(leadsDaoProvider).markEstimateSent(
-            widget.lead.id,
-            widget.lead.version,
-          );
+      await ref.read(leadActionsServiceProvider).markEstimateSent(widget.lead);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -333,7 +342,6 @@ class _LeadDetailBodyState extends ConsumerState<_LeadDetailBody> {
 
   Future<void> _updateFollowupState(
     String nextState,
-    LocalFollowupSequence? sequence,
   ) async {
     if (_busyAction) {
       return;
@@ -381,18 +389,10 @@ class _LeadDetailBodyState extends ConsumerState<_LeadDetailBody> {
 
     setState(() => _busyAction = true);
     try {
-      await ref.read(leadsDaoProvider).updateFollowupState(
-            widget.lead.id,
-            nextState,
-            widget.lead.version,
+      await ref.read(leadActionsServiceProvider).updateFollowupState(
+            lead: widget.lead,
+            nextState: nextState,
           );
-
-      if (sequence != null) {
-        await ref.read(followupsDaoProvider).updateSequenceState(
-              sequence.id,
-              nextState,
-            );
-      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -670,16 +670,14 @@ class _LeadDetailBodyState extends ConsumerState<_LeadDetailBody> {
                             TextButton.icon(
                               onPressed: _busyAction
                                   ? null
-                                  : () =>
-                                      _updateFollowupState('paused', sequence),
+                                  : () => _updateFollowupState('paused'),
                               icon: const Icon(Icons.pause),
                               label: const Text('Pause'),
                             ),
                             TextButton.icon(
                               onPressed: _busyAction
                                   ? null
-                                  : () =>
-                                      _updateFollowupState('stopped', sequence),
+                                  : () => _updateFollowupState('stopped'),
                               icon: const Icon(Icons.stop_circle_outlined),
                               label: const Text('Stop'),
                             ),

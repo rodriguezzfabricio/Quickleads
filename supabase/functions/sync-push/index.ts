@@ -29,7 +29,15 @@ interface ApiError {
 
 interface SyncMutationRequest {
   client_mutation_id: string;
-  entity: "lead" | "job" | "followup_sequence" | "call_log" | "import" | "notification" | "device";
+  entity:
+    | "lead"
+    | "job"
+    | "followup_sequence"
+    | "call_log"
+    | "import"
+    | "notification"
+    | "device"
+    | "message_template";
   entity_id?: string;
   type: "insert" | "update" | "delete" | "status_transition";
   base_version?: number;
@@ -68,6 +76,7 @@ const ENTITY_TYPES = new Set([
   "import",
   "notification",
   "device",
+  "message_template",
 ] as const);
 
 const MUTATION_TYPES = new Set(["insert", "update", "delete", "status_transition"] as const);
@@ -120,6 +129,11 @@ const ENTITY_CONFIG: Record<SyncMutationRequest["entity"], EntityConfig> = {
   },
   device: {
     tableName: "devices",
+    isVersioned: false,
+    supportsSoftDelete: false,
+  },
+  message_template: {
+    tableName: "message_templates",
     isVersioned: false,
     supportsSoftDelete: false,
   },

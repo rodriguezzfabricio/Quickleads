@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
 import '../../../core/network/supabase_client.dart';
 import '../../../core/network/supabase_constants.dart';
+import '../../../core/storage/app_database.dart';
+import '../../../core/storage/providers.dart';
 
 enum AppAuthStatus {
   loading,
@@ -22,12 +25,14 @@ class ProfileSummary {
     required this.organizationId,
     required this.fullName,
     required this.role,
+    this.phoneE164,
   });
 
   final String id;
   final String organizationId;
   final String fullName;
   final String role;
+  final String? phoneE164;
 
   factory ProfileSummary.fromJson(Map<String, dynamic> json) {
     return ProfileSummary(
@@ -35,6 +40,17 @@ class ProfileSummary {
       organizationId: json['organization_id'] as String,
       fullName: (json['full_name'] as String?) ?? '',
       role: (json['role'] as String?) ?? 'member',
+      phoneE164: json['phone_e164'] as String?,
+    );
+  }
+
+  factory ProfileSummary.fromLocal(LocalProfile profile) {
+    return ProfileSummary(
+      id: profile.id,
+      organizationId: profile.organizationId,
+      fullName: profile.fullName,
+      role: profile.role,
+      phoneE164: profile.phoneE164,
     );
   }
 }
@@ -48,7 +64,8 @@ class AppAuthState {
   });
 
   const AppAuthState.loading() : this(status: AppAuthStatus.loading);
-  const AppAuthState.unauthenticated() : this(status: AppAuthStatus.unauthenticated);
+  const AppAuthState.unauthenticated()
+      : this(status: AppAuthStatus.unauthenticated);
 
   final AppAuthStatus status;
   final supabase.Session? session;
@@ -56,7 +73,8 @@ class AppAuthState {
   final ProfileSummary? profile;
 }
 
-final authProvider = AsyncNotifierProvider<AuthNotifier, AppAuthState>(AuthNotifier.new);
+final authProvider =
+    AsyncNotifierProvider<AuthNotifier, AppAuthState>(AuthNotifier.new);
 
 class AuthNotifier extends AsyncNotifier<AppAuthState> {
   late final supabase.SupabaseClient _supabase;
@@ -85,7 +103,16 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
       return const AppAuthState.unauthenticated();
     }
 
-    final profile = await _fetchProfile(user.id);
+    ProfileSummary? profile;
+    try {
+      profile = await _fetchProfile(user.id);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Auth profile fetch failed, trying local cache: $error');
+      }
+    }
+
+    profile ??= await _readLocalProfile(user.id);
     if (profile == null) {
       return AppAuthState(
         status: AppAuthStatus.needsWorkspace,
@@ -93,6 +120,8 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
         user: user,
       );
     }
+
+    await _hydrateLocalAuthCache(profile, user.id);
 
     return AppAuthState(
       status: AppAuthStatus.authenticated,
@@ -105,7 +134,7 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
   Future<ProfileSummary?> _fetchProfile(String authUserId) async {
     final response = await _supabase
         .from('profiles')
-        .select('id, organization_id, full_name, role')
+        .select('id, organization_id, full_name, role, phone_e164')
         .eq('auth_user_id', authUserId)
         .maybeSingle();
 
@@ -114,6 +143,76 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
     }
 
     return ProfileSummary.fromJson(Map<String, dynamic>.from(response as Map));
+  }
+
+  Future<ProfileSummary?> _readLocalProfile(String authUserId) async {
+    final localProfile = await ref
+        .read(organizationsDaoProvider)
+        .getProfileByAuthUserId(authUserId);
+    if (localProfile == null) {
+      return null;
+    }
+    return ProfileSummary.fromLocal(localProfile);
+  }
+
+  Future<void> _hydrateLocalAuthCache(
+    ProfileSummary profile,
+    String authUserId,
+  ) async {
+    try {
+      final organizationResponse = await _supabase
+          .from('organizations')
+          .select('id, name, timezone, created_at, updated_at')
+          .eq('id', profile.organizationId)
+          .maybeSingle();
+
+      final organizationsDao = ref.read(organizationsDaoProvider);
+      await organizationsDao.upsertProfile(
+        LocalProfilesCompanion.insert(
+          id: profile.id,
+          organizationId: profile.organizationId,
+          authUserId: authUserId,
+          fullName: profile.fullName,
+          role: Value(profile.role),
+          phoneE164: Value(profile.phoneE164),
+          createdAt: Value(DateTime.now()),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+
+      if (organizationResponse != null) {
+        final org = Map<String, dynamic>.from(organizationResponse as Map);
+        final name = (org['name'] as String?)?.trim();
+        if (name != null && name.isNotEmpty) {
+          await organizationsDao.upsertOrganization(
+            LocalOrganizationsCompanion.insert(
+              id: profile.organizationId,
+              name: name,
+              timezone: Value(
+                (org['timezone'] as String?) ?? 'America/New_York',
+              ),
+              createdAt: Value(
+                _parseDate(org['created_at']) ?? DateTime.now(),
+              ),
+              updatedAt: Value(
+                _parseDate(org['updated_at']) ?? DateTime.now(),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Auth cache hydration failed: $error');
+      }
+    }
+  }
+
+  DateTime? _parseDate(dynamic input) {
+    if (input is String && input.isNotEmpty) {
+      return DateTime.tryParse(input);
+    }
+    return null;
   }
 
   Future<void> refreshAuthState({bool showLoading = false}) async {
@@ -249,7 +348,8 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
       }
       final dataMap = Map<String, dynamic>.from(data);
 
-      if (dataMap['organization_id'] is! String || dataMap['profile_id'] is! String) {
+      if (dataMap['organization_id'] is! String ||
+          dataMap['profile_id'] is! String) {
         throw StateError('auth-bootstrap returned malformed IDs.');
       }
     });
@@ -272,7 +372,9 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
       return 'Workspace service error. Please try again.';
     }
 
-    return raw.isNotEmpty ? raw : 'Could not create workspace. Please try again.';
+    return raw.isNotEmpty
+        ? raw
+        : 'Could not create workspace. Please try again.';
   }
 
   Future<String> _ensureValidAccessToken({
@@ -281,7 +383,7 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
     var session = _supabase.auth.currentSession;
     if (session == null) {
       throw const supabase.AuthException(
-          'Session expired. Please sign in again.',
+        'Session expired. Please sign in again.',
       );
     }
 
@@ -292,7 +394,9 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
           ).isBefore(DateTime.now().add(const Duration(minutes: 1)))
         : false;
 
-    if (forceRefresh || isExpiringSoon || !_isAccessTokenStillValid(session.accessToken)) {
+    if (forceRefresh ||
+        isExpiringSoon ||
+        !_isAccessTokenStillValid(session.accessToken)) {
       final refreshResult = await _supabase.auth.refreshSession();
       session = refreshResult.session;
       if (session == null) {
@@ -311,13 +415,6 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
     }
 
     return session.accessToken;
-  }
-
-  bool _isJwtFailure(Object error) {
-    final raw = error.toString();
-    return raw.contains('FunctionException(status: 401') ||
-        raw.contains('Invalid JWT') ||
-        raw.contains('Unauthorized');
   }
 
   bool _isAccessTokenStillValid(String token) {
@@ -371,7 +468,8 @@ class AuthNotifier extends AsyncNotifier<AppAuthState> {
 
     final expIso = expSeconds == null
         ? 'n/a'
-        : DateTime.fromMillisecondsSinceEpoch(expSeconds * 1000).toIso8601String();
+        : DateTime.fromMillisecondsSinceEpoch(expSeconds * 1000)
+            .toIso8601String();
 
     final sub = payload['sub'] ?? 'n/a';
     final role = payload['role'] ?? payload['app_metadata'] ?? 'n/a';

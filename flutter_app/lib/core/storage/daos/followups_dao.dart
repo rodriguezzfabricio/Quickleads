@@ -28,6 +28,13 @@ class FollowupsDao extends DatabaseAccessor<AppDatabase>
         .watchSingleOrNull();
   }
 
+  /// Get a follow-up sequence for a specific lead (one-shot).
+  Future<LocalFollowupSequence?> getSequenceByLeadId(String leadId) {
+    return (select(localFollowupSequences)
+          ..where((s) => s.leadId.equals(leadId)))
+        .getSingleOrNull();
+  }
+
   /// Watch all messages for a sequence.
   Stream<List<LocalFollowupMessage>> watchMessagesBySequenceId(
     String sequenceId,
@@ -65,8 +72,7 @@ class FollowupsDao extends DatabaseAccessor<AppDatabase>
           'organization_id': seq.organizationId.value,
           'lead_id': seq.leadId.value,
           'state': seq.state.present ? seq.state.value : 'active',
-          'start_date_local':
-              seq.startDateLocal.value.toIso8601String(),
+          'start_date_local': seq.startDateLocal.value.toIso8601String(),
           'timezone': seq.timezone.value,
         },
       );

@@ -10,9 +10,9 @@ import '../../shared/widgets/job_tile.dart';
 
 const _kHealthStatuses = [
   ('all', 'All'),
-  ('green', 'Active'),
-  ('yellow', 'On Hold'),
-  ('red', 'Completed'),
+  ('green', 'On Track'),
+  ('yellow', 'Needs Attention'),
+  ('red', 'Behind Schedule'),
 ];
 
 // ── JobsScreen ────────────────────────────────────────────────────────────────
@@ -31,7 +31,8 @@ class _JobsScreenState extends ConsumerState<JobsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _kHealthStatuses.length, vsync: this);
+    _tabController =
+        TabController(length: _kHealthStatuses.length, vsync: this);
   }
 
   @override
