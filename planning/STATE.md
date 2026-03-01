@@ -5,64 +5,65 @@
 See: planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** A contractor can capture a lead and never forget to follow up again.
-**Current focus:** Phase 0 - Architecture & Setup
+**Current focus:** Phase 1.1 Stabilization Wave - P1/P2 hardening
 
 ## Current Position
 
-Phase: 0 of 6 (7 total phases, currently Architecture & Setup)
-Plan: 4 of 4 in current phase
-Status: In progress
-Last activity: 2026-02-25 - Fixed false-positive 200 OK responses in scaffold edge functions (leads-estimate-sent, sync-push, sync-pull) → now return 501 not_implemented
+Phase: 1.1 stabilization (cross-phase hardening)
+Plan: 6 of 6 in stabilization wave
+Status: Complete
+Last activity: 2026-03-01 - Stabilized auth cache hydration, settings data flow, sync device registration, follow-up template/notification consistency, and job status semantics.
 
 Progress: [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: N/A (first tracked execution batch)
-- Total execution time: N/A (manual timing not captured)
+- Total plans completed: 10
+- New plans completed in this wave: 6
+- Validation status: `flutter analyze` clean, `flutter test` passing
 
 **By Phase:**
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 0 | 4 | N/A | N/A |
-
-**Recent Trend:**
-- Last 5 plans: 00-01 completed, 00-02 completed, 00-03 completed, 00-04 completed
-- Trend: Improving
+| Phase | Plans Complete | Status |
+|-------|----------------|--------|
+| 0 (Architecture & Setup) | 4/4 | Complete |
+| 1 (Core Data & Auth) | 2/5 | In progress |
+| 1.1 (Stabilization Wave) | 6/6 | Complete |
+| 2 (Lead Capture & Pipeline) | 1/5 | In progress |
+| 3 (Follow-Up Engine) | 1/5 | In progress |
+| 4 (Job Dashboard) | 1/4 | In progress |
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- Phase 0: Use Supabase + Postgres + Edge Functions as MVP backend
-- Phase 0: Use Riverpod + Drift + Supabase Flutter stack
-- Phase 0: Use Twilio SMS + Resend email for follow-up messaging
+- Keep brownfield momentum: preserve uncommitted in-progress code and harden in place.
+- Introduce `LeadActionsService` to unify estimate-sent/follow-up transitions across Home, Leads, and Lead Detail.
+- Introduce `DeviceRegistrationService` so sync uses a registered device ID instead of placeholder UUID.
+- Normalize follow-up template keys to canonical server keys (`day_2_followup`, `day_5_followup`, `day_10_followup`).
+- Keep settings save messaging truthful: local persistence is guaranteed; cloud sync is best-effort unless explicit sync queue exists.
 
 ### Pending Todos
 
-- TODO(PHASE-1-runtime-tools): Install Flutter SDK to run native mobile commands in this environment.
-- TODO(PHASE-1-runtime-tools): Install Supabase CLI to run local migrations/functions workflows.
+- TODO(PHASE-1-sync): Decide whether org/profile edits should enter sync outbox for offline replay instead of direct best-effort Supabase updates.
+- TODO(PHASE-2-sync-observability): Add sync telemetry (success/failure counters) for push/pull and device registration failures.
+- TODO(PHASE-3-followup-engine): Replace local notification-only follow-up behavior with server-driven scheduler + delivery pipeline (Twilio/Resend).
+- TODO(PHASE-5-call-detection): Implement native Android call observer and iOS fallback channels.
+- TODO(ops): Install Supabase CLI in this environment to run migrations/functions locally before deployment.
 
 ### Blockers/Concerns
 
-- Flutter SDK is not installed in this environment, so scaffold is file-structure-only for now
-- Supabase CLI is not installed in this environment, so local migration/function execution cannot be verified here
-- All three edge functions (leads-estimate-sent, sync-push, sync-pull) are scaffold-only stubs returning 501; real persistence logic is blocked on Phase 1 (domain transitions) and Phase 2 (sync engine)
+- Supabase CLI is still unavailable in this environment, so migration/function validation is code-review + app-test based only.
+- `leads-estimate-sent` edge function remains scaffold-only (`501 not_implemented`) pending full server-side follow-up pipeline.
 
-### Next Backend Milestone
+### Next Milestone
 
-- **Phase 1**: Implement lead status persistence in `leads-estimate-sent` (domain transition writes, optimistic versioning)
-- **Phase 2**: Implement sync-push mutation application and sync-pull delta queries with idempotency + conflict resolution
-- **Phase 3**: Wire follow-up scheduler (Twilio/Resend) into estimate-sent success path
+- **Phase 1 completion**: finalize robust onboarding/auth persistence and close remaining auth requirements.
+- **Phase 2 completion**: harden sync conflict handling with production-ready observability and complete lead pipeline parity.
 
 ## Session Continuity
 
-Last session: 2026-02-26
-Stopped at: Phase 0 complete — backend foundation, security baseline, and UX parity scaffolding all done
-Resume file: planning/phases/00-architecture-setup/00-04-PLAN.md
+Last session: 2026-03-01
+Stopped at: Phase 1.1 stabilization complete
+Resume file: planning/phases/01-core-data-auth/01-05-PLAN.md

@@ -80,10 +80,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
 
     setState(() => _updatingLeadId = lead.id);
     try {
-      await ref.read(leadsDaoProvider).markEstimateSent(
-            lead.id,
-            lead.version,
-          );
+      await ref.read(leadActionsServiceProvider).markEstimateSent(lead);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

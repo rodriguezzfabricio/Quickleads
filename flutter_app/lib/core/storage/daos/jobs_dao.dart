@@ -92,9 +92,11 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
     int currentVersion,
   ) {
     return transaction(() async {
+      final nextVersion = currentVersion + 1;
       await (update(localJobs)..where((j) => j.id.equals(jobId))).write(
         LocalJobsCompanion(
           phase: Value(newPhase),
+          version: Value(nextVersion),
           updatedAt: Value(DateTime.now()),
           needsSync: const Value(true),
         ),
@@ -104,7 +106,11 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
         entityId: jobId,
         mutationType: 'update',
         baseVersion: currentVersion,
-        payload: {'phase': newPhase},
+        payload: {
+          'id': jobId,
+          'phase': newPhase,
+          'version': nextVersion,
+        },
       );
     });
   }
@@ -116,9 +122,11 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
     int currentVersion,
   ) {
     return transaction(() async {
+      final nextVersion = currentVersion + 1;
       await (update(localJobs)..where((j) => j.id.equals(jobId))).write(
         LocalJobsCompanion(
           healthStatus: Value(newHealthStatus),
+          version: Value(nextVersion),
           updatedAt: Value(DateTime.now()),
           needsSync: const Value(true),
         ),
@@ -128,7 +136,11 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
         entityId: jobId,
         mutationType: 'update',
         baseVersion: currentVersion,
-        payload: {'health_status': newHealthStatus},
+        payload: {
+          'id': jobId,
+          'health_status': newHealthStatus,
+          'version': nextVersion,
+        },
       );
     });
   }
@@ -137,9 +149,11 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
   Future<void> softDeleteJob(String jobId, int currentVersion) {
     return transaction(() async {
       final now = DateTime.now();
+      final nextVersion = currentVersion + 1;
       await (update(localJobs)..where((j) => j.id.equals(jobId))).write(
         LocalJobsCompanion(
           deletedAt: Value(now),
+          version: Value(nextVersion),
           updatedAt: Value(now),
           needsSync: const Value(true),
         ),
@@ -149,7 +163,11 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
         entityId: jobId,
         mutationType: 'delete',
         baseVersion: currentVersion,
-        payload: {'deleted_at': now.toIso8601String()},
+        payload: {
+          'id': jobId,
+          'deleted_at': now.toIso8601String(),
+          'version': nextVersion,
+        },
       );
     });
   }

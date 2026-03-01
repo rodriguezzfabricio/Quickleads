@@ -2,24 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/domain/job_health_status.dart';
+import '../../core/domain/job_phase.dart';
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
-
-// ── Phase progression order ───────────────────────────────────────────────────
-
-const _kPhases = [
-  ('demo', 'Demo'),
-  ('scheduled', 'Scheduled'),
-  ('in_progress', 'In Progress'),
-  ('punch_list', 'Punch List'),
-  ('completed', 'Completed'),
-];
-
-const _kHealthOptions = [
-  ('green', 'Active'),
-  ('yellow', 'On Hold'),
-  ('red', 'Completed'),
-];
 
 // ── JobDetailScreen ───────────────────────────────────────────────────────────
 
@@ -72,14 +58,14 @@ class _JobDetailBody extends ConsumerStatefulWidget {
 }
 
 class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
-  late String _pendingHealthStatus;
+  late JobHealthStatus _pendingHealthStatus;
   bool _updatingHealth = false;
   bool _updatingPhase = false;
 
   @override
   void initState() {
     super.initState();
-    _pendingHealthStatus = widget.job.healthStatus;
+    _pendingHealthStatus = JobHealthStatus.fromDb(widget.job.healthStatus);
   }
 
   @override
@@ -87,25 +73,25 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
     super.didUpdateWidget(oldWidget);
     if (widget.job.healthStatus != oldWidget.job.healthStatus &&
         !_updatingHealth) {
-      _pendingHealthStatus = widget.job.healthStatus;
+      _pendingHealthStatus = JobHealthStatus.fromDb(widget.job.healthStatus);
     }
   }
 
   // ── Health status mutation ────────────────────────────────────────
 
-  Future<void> _changeHealthStatus(String newStatus) async {
-    if (newStatus == widget.job.healthStatus) return;
+  Future<void> _changeHealthStatus(JobHealthStatus newStatus) async {
+    if (newStatus.dbValue == widget.job.healthStatus) return;
 
-    if (newStatus == 'red') {
+    if (newStatus == JobHealthStatus.behind) {
       final confirmed = await _confirmDialog(
-        title: 'Mark as Completed?',
-        message: 'This will mark the job as completed.',
-        confirmLabel: 'Complete',
+        title: 'Mark as Behind Schedule?',
+        message: 'This will mark the job as behind schedule.',
+        confirmLabel: 'Confirm',
       );
       if (!confirmed || !mounted) return;
     }
 
-    final prev = widget.job.healthStatus;
+    final prev = _pendingHealthStatus;
     setState(() {
       _pendingHealthStatus = newStatus;
       _updatingHealth = true;
@@ -114,7 +100,7 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
     try {
       await ref.read(jobsDaoProvider).updateJobHealthStatus(
             widget.job.id,
-            newStatus,
+            newStatus.dbValue,
             widget.job.version,
           );
     } catch (error) {
@@ -131,15 +117,18 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
   // ── Phase progression mutation ────────────────────────────────────
 
   Future<void> _advancePhase() async {
-    final currentIndex =
-        _kPhases.indexWhere((p) => p.$1 == widget.job.phase);
-    if (currentIndex == -1 || currentIndex >= _kPhases.length - 1) return;
+    final currentPhase = JobPhase.fromDb(widget.job.phase);
+    final currentIndex = JobPhase.orderedValues.indexOf(currentPhase);
+    if (currentIndex == -1 ||
+        currentIndex >= JobPhase.orderedValues.length - 1) {
+      return;
+    }
 
-    final nextPhase = _kPhases[currentIndex + 1];
+    final nextPhase = JobPhase.orderedValues[currentIndex + 1];
     final confirmed = await _confirmDialog(
       title: 'Advance Phase?',
-      message: 'Move this job from "${_kPhases[currentIndex].$2}" '
-          'to "${nextPhase.$2}"?',
+      message: 'Move this job from "${currentPhase.displayLabel}" '
+          'to "${nextPhase.displayLabel}"?',
       confirmLabel: 'Advance',
     );
     if (!confirmed || !mounted) return;
@@ -149,7 +138,7 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
     try {
       await ref.read(jobsDaoProvider).updateJobPhase(
             widget.job.id,
-            nextPhase.$1,
+            nextPhase.dbValue,
             widget.job.version,
           );
     } catch (error) {
@@ -163,15 +152,15 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
   }
 
   Future<void> _revertPhase() async {
-    final currentIndex =
-        _kPhases.indexWhere((p) => p.$1 == widget.job.phase);
+    final currentPhase = JobPhase.fromDb(widget.job.phase);
+    final currentIndex = JobPhase.orderedValues.indexOf(currentPhase);
     if (currentIndex <= 0) return;
 
-    final prevPhase = _kPhases[currentIndex - 1];
+    final prevPhase = JobPhase.orderedValues[currentIndex - 1];
     final confirmed = await _confirmDialog(
       title: 'Revert Phase?',
-      message: 'Move this job back from "${_kPhases[currentIndex].$2}" '
-          'to "${prevPhase.$2}"?',
+      message: 'Move this job back from "${currentPhase.displayLabel}" '
+          'to "${prevPhase.displayLabel}"?',
       confirmLabel: 'Revert',
     );
     if (!confirmed || !mounted) return;
@@ -181,7 +170,7 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
     try {
       await ref.read(jobsDaoProvider).updateJobPhase(
             widget.job.id,
-            prevPhase.$1,
+            prevPhase.dbValue,
             widget.job.version,
           );
     } catch (error) {
@@ -228,9 +217,10 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
     final theme = Theme.of(context);
     final job = widget.job;
     final dateFormat = DateFormat.yMMMMd();
-    final currentPhaseIndex = _kPhases.indexWhere((p) => p.$1 == job.phase);
-    final isLastPhase = currentPhaseIndex == _kPhases.length - 1;
-    final isFirstPhase = currentPhaseIndex <= 0;
+    final currentPhase = JobPhase.fromDb(job.phase);
+    final currentPhaseIndex = JobPhase.orderedValues.indexOf(currentPhase);
+    final isLastPhase = currentPhase.isFinal;
+    final isFirstPhase = currentPhase == JobPhase.demo;
 
     return Scaffold(
       appBar: AppBar(
@@ -262,15 +252,14 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
                         ? const Center(
                             child: SizedBox(
                               height: 36,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                           )
-                        : SegmentedButton<String>(
-                            segments: _kHealthOptions
-                                .map((s) => ButtonSegment<String>(
-                                      value: s.$1,
-                                      label: Text(s.$2),
+                        : SegmentedButton<JobHealthStatus>(
+                            segments: JobHealthStatus.values
+                                .map((s) => ButtonSegment<JobHealthStatus>(
+                                      value: s,
+                                      label: Text(s.displayLabel),
                                     ))
                                 .toList(),
                             selected: {_pendingHealthStatus},
@@ -298,7 +287,7 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
                         icon: Icons.trending_up_outlined, label: 'Phase'),
                     const SizedBox(height: 16),
                     _PhaseProgressRow(
-                      phases: _kPhases,
+                      phases: JobPhase.orderedValues,
                       currentPhaseIndex: currentPhaseIndex,
                     ),
                     const SizedBox(height: 16),
@@ -331,15 +320,11 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
                                 label: const Text('Advance'),
                               ),
                             ),
-                          if (isLastPhase && isFirstPhase)
-                            Expanded(
+                          if (isLastPhase)
+                            const Expanded(
                               child: FilledButton.tonal(
                                 onPressed: null,
-                                child: Text(
-                                  currentPhaseIndex == _kPhases.length - 1
-                                      ? 'All phases complete'
-                                      : 'Unknown phase',
-                                ),
+                                child: Text('All phases complete'),
                               ),
                             ),
                         ],
@@ -385,8 +370,7 @@ class _JobDetailBodyState extends ConsumerState<_JobDetailBody> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const _CardSectionTitle(
-                        icon: Icons.calendar_month_outlined,
-                        label: 'Schedule'),
+                        icon: Icons.calendar_month_outlined, label: 'Schedule'),
                     const SizedBox(height: 12),
                     _InfoRow(
                       icon: Icons.event_outlined,
@@ -446,7 +430,7 @@ class _PhaseProgressRow extends StatelessWidget {
     required this.currentPhaseIndex,
   });
 
-  final List<(String, String)> phases;
+  final List<JobPhase> phases;
   final int currentPhaseIndex;
 
   @override
@@ -471,12 +455,10 @@ class _PhaseProgressRow extends StatelessWidget {
         final phaseIndex = i ~/ 2;
         final isCompleted = phaseIndex < currentPhaseIndex;
         final isCurrent = phaseIndex == currentPhaseIndex;
-        final label = phases[phaseIndex].$2;
+        final label = phases[phaseIndex].displayLabel;
 
         final Color dotColor;
-        if (isCompleted) {
-          dotColor = theme.colorScheme.primary;
-        } else if (isCurrent) {
+        if (isCompleted || isCurrent) {
           dotColor = theme.colorScheme.primary;
         } else {
           dotColor = theme.colorScheme.outlineVariant;
@@ -517,7 +499,7 @@ class _PhaseProgressRow extends StatelessWidget {
   }
 }
 
-// ── Small helper widgets (matching lead_detail_screen pattern) ─────────────────
+// ── Small helper widgets ───────────────────────────────────────────────────────
 
 class _CardSectionTitle extends StatelessWidget {
   const _CardSectionTitle({required this.icon, required this.label});

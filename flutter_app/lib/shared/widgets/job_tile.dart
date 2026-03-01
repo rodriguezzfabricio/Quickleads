@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../app/router/app_router.dart';
+import '../../core/domain/job_health_status.dart';
+import '../../core/domain/job_phase.dart';
 import '../../core/storage/app_database.dart';
 
 /// Reusable list tile for a job, matching the [LeadTile] pattern.
@@ -20,11 +22,12 @@ class JobTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final updated = DateFormat.MMMd().format(job.updatedAt.toLocal());
-    final phaseLabel = _phaseDisplayName(job.phase);
+    final phaseLabel = JobPhase.fromDb(job.phase).displayLabel;
+    final healthStatus = JobHealthStatus.fromDb(job.healthStatus);
 
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: _healthColor(job.healthStatus, theme),
+        backgroundColor: healthStatus.indicatorColor,
         foregroundColor: theme.colorScheme.onPrimary,
         child: Text(
           job.clientName.isNotEmpty ? job.clientName[0].toUpperCase() : '?',
@@ -40,55 +43,29 @@ class JobTile extends StatelessWidget {
         '${job.jobType}  ·  $phaseLabel  ·  $updated',
         style: theme.textTheme.bodySmall,
       ),
-      trailing: _JobHealthChip(healthStatus: job.healthStatus),
+      trailing: _JobHealthChip(healthStatus: healthStatus),
       onTap: onTap ??
           () => context.push(
                 AppRoutes.jobDetail.replaceFirst(':jobId', job.id),
               ),
     );
   }
-
-  Color _healthColor(String healthStatus, ThemeData theme) {
-    return switch (healthStatus) {
-      'green' => Colors.green.shade600,
-      'yellow' => Colors.orange.shade600,
-      'red' => theme.colorScheme.error,
-      _ => theme.colorScheme.tertiary,
-    };
-  }
-}
-
-String _phaseDisplayName(String phase) {
-  return switch (phase) {
-    'demo' => 'Demo',
-    'scheduled' => 'Scheduled',
-    'in_progress' => 'In Progress',
-    'punch_list' => 'Punch List',
-    'completed' => 'Completed',
-    _ => phase,
-  };
 }
 
 class _JobHealthChip extends StatelessWidget {
   const _JobHealthChip({required this.healthStatus});
 
-  final String healthStatus;
+  final JobHealthStatus healthStatus;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final (label, color) = switch (healthStatus) {
-      'green' => ('Active', Colors.green.shade600),
-      'yellow' => ('On Hold', Colors.orange.shade600),
-      'red' => ('Completed', theme.colorScheme.error),
-      _ => (healthStatus, theme.colorScheme.tertiary),
-    };
     return Chip(
       label: Text(
-        label,
+        healthStatus.displayLabel,
         style: theme.textTheme.labelSmall?.copyWith(color: Colors.white),
       ),
-      backgroundColor: color,
+      backgroundColor: healthStatus.indicatorColor,
       padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
     );

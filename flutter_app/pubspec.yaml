@@ -19,6 +19,8 @@ dependencies:
   path: ^1.9.1
   # firebase_messaging: re-add when upgrading to Xcode 16 (Firebase 11.x CocoaPods require Swift 6)
   flutter_local_notifications: ^19.0.0
+  timezone: ^0.10.1
+  flutter_timezone: ^4.1.1
   intl: ^0.20.2
   uuid: ^4.5.1
   connectivity_plus: ^6.1.3

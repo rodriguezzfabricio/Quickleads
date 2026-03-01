@@ -7,26 +7,13 @@ import 'package:uuid/uuid.dart';
 
 import '../../app/router/app_router.dart';
 import '../../core/constants/app_tokens.dart';
+import '../../core/domain/job_health_status.dart';
+import '../../core/domain/job_phase.dart';
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
 import '../auth/providers/auth_provider.dart';
 
 const _uuid = Uuid();
-
-const _phaseOptions = [
-  ('demo', 'Demo'),
-  ('rough', 'Rough'),
-  ('electrical_plumbing', 'Electrical/Plumbing'),
-  ('finishing', 'Finishing'),
-  ('walkthrough', 'Walkthrough'),
-  ('complete', 'Complete'),
-];
-
-const _healthOptions = [
-  ('green', 'On Track'),
-  ('yellow', 'Needs Attention'),
-  ('red', 'Behind Schedule'),
-];
 
 class ProjectCreationScreen extends ConsumerStatefulWidget {
   const ProjectCreationScreen({
@@ -59,8 +46,8 @@ class _ProjectCreationScreenState extends ConsumerState<ProjectCreationScreen> {
   bool _saving = false;
 
   DateTime? _estimatedCompletion;
-  String _phase = 'demo';
-  String _healthStatus = 'green';
+  JobPhase _phase = JobPhase.demo;
+  JobHealthStatus _healthStatus = JobHealthStatus.onTrack;
 
   @override
   void initState() {
@@ -138,8 +125,8 @@ class _ProjectCreationScreenState extends ConsumerState<ProjectCreationScreen> {
             _linkedLeadId != null ? Value(_linkedLeadId) : const Value.absent(),
         clientName: _clientNameController.text.trim(),
         jobType: _jobTypeController.text.trim(),
-        phase: Value(_phase),
-        healthStatus: Value(_healthStatus),
+        phase: Value(_phase.dbValue),
+        healthStatus: Value(_healthStatus.dbValue),
         estimatedCompletionDate: Value(normalizedDate),
       );
 
@@ -314,46 +301,42 @@ class _ProjectCreationScreenState extends ConsumerState<ProjectCreationScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
+                DropdownButtonFormField<JobPhase>(
                   initialValue: _phase,
                   decoration: const InputDecoration(
                     labelText: 'Starting Phase',
                     border: OutlineInputBorder(),
                   ),
-                  items: _phaseOptions
+                  items: JobPhase.orderedValues
                       .map(
-                        (option) => DropdownMenuItem<String>(
-                          value: option.$1,
-                          child: Text(option.$2),
+                        (phase) => DropdownMenuItem<JobPhase>(
+                          value: phase,
+                          child: Text(phase.displayLabel),
                         ),
                       )
                       .toList(),
                   onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
+                    if (value == null) return;
                     setState(() => _phase = value);
                   },
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
+                DropdownButtonFormField<JobHealthStatus>(
                   initialValue: _healthStatus,
                   decoration: const InputDecoration(
                     labelText: 'Status',
                     border: OutlineInputBorder(),
                   ),
-                  items: _healthOptions
+                  items: JobHealthStatus.values
                       .map(
-                        (option) => DropdownMenuItem<String>(
-                          value: option.$1,
-                          child: Text(option.$2),
+                        (status) => DropdownMenuItem<JobHealthStatus>(
+                          value: status,
+                          child: Text(status.displayLabel),
                         ),
                       )
                       .toList(),
                   onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
+                    if (value == null) return;
                     setState(() => _healthStatus = value);
                   },
                 ),

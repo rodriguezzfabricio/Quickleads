@@ -21,6 +21,7 @@ import 'daos/jobs_dao.dart';
 import 'daos/followups_dao.dart';
 import 'daos/call_logs_dao.dart';
 import 'daos/templates_dao.dart';
+import 'daos/organizations_dao.dart';
 
 part 'app_database.g.dart';
 
@@ -43,6 +44,7 @@ part 'app_database.g.dart';
     FollowupsDao,
     CallLogsDao,
     TemplatesDao,
+    OrganizationsDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {

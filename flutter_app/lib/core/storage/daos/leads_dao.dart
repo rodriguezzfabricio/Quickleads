@@ -172,9 +172,11 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
     int currentVersion,
   ) {
     return transaction(() async {
+      final nextVersion = currentVersion + 1;
       await (update(localLeads)..where((l) => l.id.equals(leadId))).write(
         LocalLeadsCompanion(
           followupState: Value(newFollowupState),
+          version: Value(nextVersion),
           updatedAt: Value(DateTime.now()),
           needsSync: const Value(true),
         ),
@@ -184,7 +186,11 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
         entityId: leadId,
         mutationType: 'update',
         baseVersion: currentVersion,
-        payload: {'followup_state': newFollowupState},
+        payload: {
+          'id': leadId,
+          'followup_state': newFollowupState,
+          'version': nextVersion,
+        },
       );
     });
   }
@@ -193,9 +199,11 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
   Future<void> softDeleteLead(String leadId, int currentVersion) {
     return transaction(() async {
       final now = DateTime.now();
+      final nextVersion = currentVersion + 1;
       await (update(localLeads)..where((l) => l.id.equals(leadId))).write(
         LocalLeadsCompanion(
           deletedAt: Value(now),
+          version: Value(nextVersion),
           updatedAt: Value(now),
           needsSync: const Value(true),
         ),
@@ -205,7 +213,11 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
         entityId: leadId,
         mutationType: 'delete',
         baseVersion: currentVersion,
-        payload: {'deleted_at': now.toIso8601String()},
+        payload: {
+          'id': leadId,
+          'deleted_at': now.toIso8601String(),
+          'version': nextVersion,
+        },
       );
     });
   }

@@ -17,7 +17,10 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:deepwiki.com)"
+      "WebFetch(domain:deepwiki.com)",
+      "Bash(flutter pub run build_runner build --delete-conflicting-outputs)",
+      "Bash(flutter analyze --no-fatal-infos)",
+      "Bash(flutter test test/core/storage/daos/ --reporter compact)"
     ]
   }
 }

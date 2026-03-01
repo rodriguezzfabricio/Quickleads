@@ -6,11 +6,11 @@ This roadmap delivers a production Flutter app that preserves the validated UX f
 
 ## Phases
 
-- [ ] **Phase 0: Architecture & Setup** - Finalize core architecture, bootstrap infra, scaffold Flutter project, and lock collaboration workflow (Duration: 1 week)
-- [ ] **Phase 1: Core Data & Auth** - Stand up backend, auth, schema, and secure app-to-backend connectivity (Duration: 1 week)
-- [ ] **Phase 2: Lead Capture & Pipeline** - Ship lead capture, lead list/detail flows, and offline-first sync pipeline (Duration: 1.5 weeks)
-- [ ] **Phase 3: Follow-Up Engine** - Implement sequence scheduler, SMS/email delivery, and sequence controls (Duration: 1.5 weeks)
-- [ ] **Phase 4: Job Dashboard** - Deliver active-job management, phase progression, and photo uploads (Duration: 1 week)
+- [x] **Phase 0: Architecture & Setup** - Finalize core architecture, bootstrap infra, scaffold Flutter project, and lock collaboration workflow (Duration: 1 week)
+- [ ] **Phase 1: Core Data & Auth** - Stand up backend, auth, schema, and secure app-to-backend connectivity (Duration: 1 week, in progress)
+- [ ] **Phase 2: Lead Capture & Pipeline** - Ship lead capture, lead list/detail flows, and offline-first sync pipeline (Duration: 1.5 weeks, in progress)
+- [ ] **Phase 3: Follow-Up Engine** - Implement sequence scheduler, SMS/email delivery, and sequence controls (Duration: 1.5 weeks, in progress)
+- [ ] **Phase 4: Job Dashboard** - Deliver active-job management, phase progression, and photo uploads (Duration: 1 week, in progress)
 - [ ] **Phase 5: Post-Call Detection** - Ship Android auto-detection, iOS fallback stack, and daily sweep review (Duration: 1.5 weeks)
 - [ ] **Phase 6: Polish & Launch** - Add CSV import, quick estimate flow, onboarding polish, and launch readiness (Duration: 1 week)
 
@@ -36,10 +36,10 @@ This roadmap delivers a production Flutter app that preserves the validated UX f
 **Plans**: 4 plans
 
 Plans:
-- [ ] 00-01: Architecture decision record and cost model [JUNIOR-DEV]
-- [ ] 00-02: Database schema, RLS strategy, and API contracts [JUNIOR-DEV]
-- [ ] 00-03: Flutter scaffold + navigation + theme token baseline [JUNIOR-DEV]
-- [ ] 00-04: UX parity checklist from React reference screens [BIZ-COFOUNDER]
+- [x] 00-01: Architecture decision record and cost model [JUNIOR-DEV]
+- [x] 00-02: Database schema, RLS strategy, and API contracts [JUNIOR-DEV]
+- [x] 00-03: Flutter scaffold + navigation + theme token baseline [JUNIOR-DEV]
+- [x] 00-04: UX parity checklist from React reference screens [BIZ-COFOUNDER]
 
 ### Phase 1: Core Data & Auth
 **Goal**: Bring live backend online with secure auth and production schema.
@@ -49,12 +49,14 @@ Plans:
 1. Users can sign up/sign in and persist sessions securely
 2. Core entities (leads, jobs, follow-up, calls) exist in Postgres with RLS enabled
 3. Flutter app can read/write tenant-scoped data against production backend
-**Plans**: 3 plans
+**Plans**: 5 plans
 
 Plans:
 - [ ] 01-01: Provision Supabase project, environments, secrets, and auth [JUNIOR-DEV]
 - [ ] 01-02: Create migrations for core schema + indexes + RLS [JUNIOR-DEV]
 - [ ] 01-03: Build auth/onboarding UI screens in Flutter from reference UX [BIZ-COFOUNDER]
+- [x] 01-04: Reconcile roadmap/state truth and stabilization resume point [BIZ-COFOUNDER]
+- [x] 01-05: Auth/workspace local-cache integrity and settings data flow cleanup [JUNIOR-DEV]
 
 ### Phase 2: Lead Capture & Pipeline
 **Goal**: Ship fast, offline-capable lead pipeline workflow.
@@ -64,13 +66,14 @@ Plans:
 1. Contractor can capture leads in seconds online/offline
 2. Lead status pipeline and conversion UX behave as defined
 3. Offline mutations sync safely without duplicate or lost records
-**Plans**: 4 plans
+**Plans**: 5 plans
 
 Plans:
 - [ ] 02-01: Implement local Drift schema + sync queue engine [JUNIOR-DEV]
 - [ ] 02-02: Build lead capture/list/detail Flutter screens from React reference [BIZ-COFOUNDER]
 - [ ] 02-03: Implement lead status transitions + conversion actions [JUNIOR-DEV]
 - [ ] 02-04: Home screen reminders for won leads without projects [BIZ-COFOUNDER]
+- [x] 02-05: Device registration + sync hardening + outbox entity alignment [JUNIOR-DEV]
 
 ### Phase 3: Follow-Up Engine
 **Goal**: Deliver reliable automated follow-up messaging workflow.
@@ -80,13 +83,14 @@ Plans:
 1. Estimate send (or manual confirmation) starts follow-up sequence
 2. Day 2/5/10 messages send inside allowed hours only
 3. Pause/stop controls work and are reflected in UI state
-**Plans**: 4 plans
+**Plans**: 5 plans
 
 Plans:
 - [ ] 03-01: Build sequence scheduler Edge Functions + cron dispatcher [JUNIOR-DEV]
 - [ ] 03-02: Integrate Twilio + email provider + template token rendering [JUNIOR-DEV]
 - [ ] 03-03: Implement follow-up status UI and controls in lead screens [BIZ-COFOUNDER]
 - [ ] 03-04: Add reliability observability and retry controls [JUNIOR-DEV]
+- [x] 03-05: Follow-up template/notification hardening via shared lead action service [JUNIOR-DEV]
 
 ### Phase 4: Job Dashboard
 **Goal**: Convert won leads into active jobs and track delivery progress.
@@ -96,12 +100,32 @@ Plans:
 1. Owner can create and manage jobs with phase progression
 2. Job status and ETA are visible at a glance
 3. Job photos upload with timestamps and are retrievable on detail view
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [ ] 04-01: Implement job schema endpoints and phase transition rules [JUNIOR-DEV]
 - [ ] 04-02: Build jobs list/detail/create screens in Flutter [BIZ-COFOUNDER]
 - [ ] 04-03: Implement photo capture/upload pipeline with storage policies [JUNIOR-DEV]
+- [x] 04-04: Jobs UX semantic normalization (phase + health labels) [BIZ-COFOUNDER]
+
+### Phase 1.1: Stabilization Wave (Cross-Phase)
+**Goal**: Stabilize and harden the in-progress P1/P2 base without losing brownfield momentum.
+**Depends on**: Phase 0
+**Requirements**: [AUTH-03, AUTH-04, LEAD-03, LEAD-05, FUP-04, JOB-02, JOB-03]
+**Success Criteria** (what must be TRUE):
+1. Authenticated users hydrate local org/profile cache before settings/follow-up screens depend on Drift-only reads
+2. Sync push no longer relies on placeholder device IDs
+3. Template editing and lead follow-up actions are consistent across Home, Leads, and Lead Detail
+4. Flutter analyzer and test suite are clean after stabilization refactor
+**Plans**: 6 plans
+
+Plans:
+- [x] 01-04: Reconcile roadmap/state truth and stabilization resume point [BIZ-COFOUNDER]
+- [x] 01-05: Auth/workspace local-cache integrity and settings data flow cleanup [JUNIOR-DEV]
+- [x] 02-05: Device registration + sync hardening + outbox entity alignment [JUNIOR-DEV]
+- [x] 03-05: Follow-up template/notification hardening via shared lead action service [JUNIOR-DEV]
+- [x] 04-04: Jobs UX semantic normalization (phase + health labels) [BIZ-COFOUNDER]
+- [x] 05-01: Regression tests, analyzer clean, verification/state updates [JUNIOR-DEV]
 
 ### Phase 5: Post-Call Detection
 **Goal**: Capture missed opportunities from phone activity across platforms.
@@ -139,10 +163,11 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 0. Architecture & Setup | 0/4 | In progress | - |
-| 1. Core Data & Auth | 0/3 | Not started | - |
-| 2. Lead Capture & Pipeline | 0/4 | Not started | - |
-| 3. Follow-Up Engine | 0/4 | Not started | - |
-| 4. Job Dashboard | 0/3 | Not started | - |
-| 5. Post-Call Detection | 0/4 | Not started | - |
+| 0. Architecture & Setup | 4/4 | Complete | 2026-02-26 |
+| 1. Core Data & Auth | 2/5 | In progress | - |
+| 1.1 Stabilization Wave | 6/6 | Complete | 2026-03-01 |
+| 2. Lead Capture & Pipeline | 1/5 | In progress | - |
+| 3. Follow-Up Engine | 1/5 | In progress | - |
+| 4. Job Dashboard | 1/4 | In progress | - |
+| 5. Post-Call Detection | 1/4 | In progress | - |
 | 6. Polish & Launch | 0/4 | Not started | - |

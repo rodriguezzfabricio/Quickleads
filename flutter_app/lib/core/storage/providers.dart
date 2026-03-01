@@ -1,13 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../network/supabase_client.dart';
+import '../notifications/notification_service.dart';
+import '../services/lead_actions_service.dart';
+import '../sync/device_registration_service.dart';
 import '../sync/sync_engine.dart';
 import '../sync/sync_status.dart';
 import 'app_database.dart';
-import 'daos/leads_dao.dart';
-import 'daos/jobs_dao.dart';
-import 'daos/followups_dao.dart';
 import 'daos/call_logs_dao.dart';
+import 'daos/followups_dao.dart';
+import 'daos/jobs_dao.dart';
+import 'daos/leads_dao.dart';
+import 'daos/organizations_dao.dart';
 import 'daos/templates_dao.dart';
 import 'debug/mock_data_seed.dart';
 
@@ -42,15 +46,42 @@ final templatesDaoProvider = Provider<TemplatesDao>((ref) {
   return ref.watch(appDatabaseProvider).templatesDao;
 });
 
+final organizationsDaoProvider = Provider<OrganizationsDao>((ref) {
+  return ref.watch(appDatabaseProvider).organizationsDao;
+});
+
 // ── Sync Engine ─────────────────────────────────────────────────────
 
 final syncEngineProvider = Provider<SyncEngine>((ref) {
   final db = ref.watch(appDatabaseProvider);
   final supabase = ref.watch(supabaseClientProvider);
-  final engine = SyncEngine(db: db, supabaseClient: supabase);
+  final deviceRegistrationService =
+      ref.watch(deviceRegistrationServiceProvider);
+  final engine = SyncEngine(
+    db: db,
+    supabaseClient: supabase,
+    deviceRegistrationService: deviceRegistrationService,
+  );
   engine.startListening();
   ref.onDispose(() => engine.dispose());
   return engine;
+});
+
+final deviceRegistrationServiceProvider =
+    Provider<DeviceRegistrationService>((ref) {
+  return DeviceRegistrationService(
+    db: ref.watch(appDatabaseProvider),
+    supabaseClient: ref.watch(supabaseClientProvider),
+  );
+});
+
+final leadActionsServiceProvider = Provider<LeadActionsService>((ref) {
+  return DriftLeadActionsService(
+    leadsDao: ref.watch(leadsDaoProvider),
+    followupsDao: ref.watch(followupsDaoProvider),
+    organizationsDao: ref.watch(organizationsDaoProvider),
+    notificationScheduler: NotificationService.instance,
+  );
 });
 
 /// Stream of current sync status for UI indicators.
@@ -137,6 +168,28 @@ final followupSequenceByLeadProvider =
 final unknownCallsProvider = StreamProvider.family<List<LocalCallLog>, String>(
   (ref, orgId) {
     return ref.watch(callLogsDaoProvider).watchUnknownCalls(orgId);
+  },
+);
+
+/// Watch an organization by ID.
+final organizationProvider = StreamProvider.family<LocalOrganization?, String>(
+  (ref, orgId) {
+    return ref.watch(organizationsDaoProvider).watchOrganization(orgId);
+  },
+);
+
+/// Watch a user profile by ID.
+final profileProvider = StreamProvider.family<LocalProfile?, String>(
+  (ref, profileId) {
+    return ref.watch(organizationsDaoProvider).watchProfile(profileId);
+  },
+);
+
+/// Watch all active message templates for an org.
+final activeTemplatesProvider =
+    StreamProvider.family<List<LocalMessageTemplate>, String>(
+  (ref, orgId) {
+    return ref.watch(templatesDaoProvider).watchActiveTemplates(orgId);
   },
 );
 
