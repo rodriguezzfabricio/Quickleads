@@ -15,6 +15,8 @@ import 'tables/organizations_table.dart';
 import 'tables/profiles_table.dart';
 import 'tables/pending_sync_actions_table.dart';
 import 'tables/sync_cursors_table.dart';
+import 'tables/job_photos_table.dart';
+import 'tables/clients_table.dart';
 
 import 'daos/leads_dao.dart';
 import 'daos/jobs_dao.dart';
@@ -22,6 +24,8 @@ import 'daos/followups_dao.dart';
 import 'daos/call_logs_dao.dart';
 import 'daos/templates_dao.dart';
 import 'daos/organizations_dao.dart';
+import 'daos/job_photos_dao.dart';
+import 'daos/clients_dao.dart';
 
 part 'app_database.g.dart';
 
@@ -37,6 +41,8 @@ part 'app_database.g.dart';
     LocalProfiles,
     PendingSyncActions,
     SyncCursors,
+    LocalJobPhotos,
+    LocalClients,
   ],
   daos: [
     LeadsDao,
@@ -45,6 +51,8 @@ part 'app_database.g.dart';
     CallLogsDao,
     TemplatesDao,
     OrganizationsDao,
+    JobPhotosDao,
+    ClientsDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -57,7 +65,21 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.memory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) async {
+          await m.createAll();
+        },
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.createTable(localJobPhotos);
+            await m.createTable(localClients);
+            await m.addColumn(localJobs, localJobs.notes);
+          }
+        },
+      );
 }
 
 LazyDatabase _openConnection() {

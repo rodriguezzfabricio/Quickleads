@@ -1,10 +1,21 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../app/router/app_router.dart';
-import '../../core/constants/app_tokens.dart';
+import '../../core/storage/app_database.dart';
+import '../../core/storage/providers.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../features/auth/providers/auth_provider.dart';
+import '../../shared/widgets/glass_card.dart';
 
-const _projectTypes = [
+const _uuid = Uuid();
+
+const _jobTypes = [
   'Deck',
   'Kitchen',
   'Bathroom',
@@ -17,37 +28,41 @@ const _projectTypes = [
   'Other',
 ];
 
-class ClientDetailScreen extends StatefulWidget {
+class ClientDetailScreen extends ConsumerStatefulWidget {
   const ClientDetailScreen({
     super.key,
     this.clientId,
     this.isCreateFlow = false,
     this.prefillName,
     this.prefillPhone,
+    this.prefillLeadId,
   });
 
   final String? clientId;
   final bool isCreateFlow;
   final String? prefillName;
   final String? prefillPhone;
+  final String? prefillLeadId;
 
   @override
-  State<ClientDetailScreen> createState() => _ClientDetailScreenState();
+  ConsumerState<ClientDetailScreen> createState() => _ClientDetailScreenState();
 }
 
-class _ClientDetailScreenState extends State<ClientDetailScreen> {
+class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
-  bool _addingProject = false;
-  String? _draftJobType;
-  DateTime? _draftCompletionDate;
-  final TextEditingController _draftNotesController = TextEditingController();
+  bool _hydratedExisting = false;
+  bool _saving = false;
 
-  final List<_ProjectDraft> _projects = [];
+  final List<_ProjectDraft> _draftProjects = [];
+  bool _addingProject = false;
+  String _draftJobType = '';
+  DateTime? _draftDate;
+  final TextEditingController _draftNotesController = TextEditingController();
 
   @override
   void initState() {
@@ -67,256 +82,326 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
     super.dispose();
   }
 
-  bool get _canSaveClient {
-    return _nameController.text.trim().isNotEmpty &&
-        _phoneController.text.trim().isNotEmpty;
+  bool get _canSave {
+    return _nameController.text.trim().isNotEmpty && !_saving;
   }
 
-  bool get _canAddProject {
-    return _draftJobType != null && _draftCompletionDate != null;
-  }
-
-  Future<void> _pickDraftDate() async {
-    final today = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _draftCompletionDate ?? today,
-      firstDate: DateTime(today.year - 20),
-      lastDate: DateTime(today.year + 1),
-    );
-
-    if (picked != null && mounted) {
-      setState(() => _draftCompletionDate = picked);
-    }
-  }
-
-  void _addProjectDraft() {
-    if (!_canAddProject) {
+  Future<void> _saveClient({
+    required String orgId,
+    required LocalClient? existing,
+  }) async {
+    if (!_canSave) {
       return;
     }
 
-    setState(() {
-      _projects.add(
-        _ProjectDraft(
-          id: 'draft-${DateTime.now().millisecondsSinceEpoch}',
-          jobType: _draftJobType!,
-          completedAt: _draftCompletionDate!,
-          notes: _draftNotesController.text.trim(),
-        ),
+    setState(() => _saving = true);
+
+    try {
+      final dao = ref.read(clientsDaoProvider);
+      final name = _nameController.text.trim();
+      final phone = _phoneController.text.trim();
+      final email = _emailController.text.trim();
+      final address = _addressController.text.trim();
+      final notes = _notesController.text.trim();
+
+      if (existing == null) {
+        await dao.createClient(
+          LocalClientsCompanion.insert(
+            id: _uuid.v4(),
+            organizationId: orgId,
+            name: name,
+            phone: Value(phone.isEmpty ? null : phone),
+            email: Value(email.isEmpty ? null : email),
+            address: Value(address.isEmpty ? null : address),
+            notes: Value(notes.isEmpty ? null : notes),
+            sourceLeadId: Value(widget.prefillLeadId),
+            projectCount: Value(_draftProjects.length),
+          ),
+        );
+      } else {
+        await dao.updateClient(
+          id: existing.id,
+          name: name,
+          phone: phone.isEmpty ? null : phone,
+          email: email.isEmpty ? null : email,
+          address: address.isEmpty ? null : address,
+          notes: notes.isEmpty ? null : notes,
+          sourceLeadId: existing.sourceLeadId,
+          projectCount: existing.projectCount,
+          currentVersion: existing.version,
+        );
+      }
+
+      if (!mounted) return;
+      context.go(AppRoutes.clients);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save client: $error')),
       );
-      _addingProject = false;
-      _draftJobType = null;
-      _draftCompletionDate = null;
-      _draftNotesController.clear();
-    });
-  }
-
-  void _saveClient() {
-    if (!_canSaveClient) {
-      return;
+      setState(() => _saving = false);
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Client UI saved locally for this session. Persistent client storage is not wired yet.',
-        ),
-      ),
-    );
-    context.go(AppRoutes.clients);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final auth = ref.watch(authProvider).valueOrNull;
+    final orgId = auth?.profile?.organizationId ?? '';
 
-    if (!widget.isCreateFlow) {
+    if (orgId.isEmpty) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (widget.isCreateFlow) {
+      return _buildScaffold(
+        orgId: orgId,
+        existing: null,
+        history: const [],
+      );
+    }
+
+    final clientId = widget.clientId;
+    if (clientId == null || clientId.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Client Detail')),
         body: Center(
-          child: Text(
-            widget.clientId == null
-                ? 'Client not found.'
-                : 'Client profile for ${widget.clientId} is not implemented yet.',
-          ),
+          child: Text('Client not found', style: AppTextStyles.secondary),
         ),
       );
     }
 
-    final dateLabel = _draftCompletionDate == null
-        ? 'Completion Date'
-        : '${_draftCompletionDate!.month}/${_draftCompletionDate!.day}/${_draftCompletionDate!.year}';
+    final clientAsync = ref.watch(clientByIdProvider(clientId));
+    return clientAsync.when(
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (error, _) => Scaffold(body: Center(child: Text('Error: $error'))),
+      data: (client) {
+        if (client == null || client.deletedAt != null) {
+          return Scaffold(
+            body: Center(
+              child: Text('Client not found', style: AppTextStyles.secondary),
+            ),
+          );
+        }
+
+        if (!_hydratedExisting) {
+          _hydratedExisting = true;
+          _nameController.text = client.name;
+          _phoneController.text = client.phone ?? '';
+          _emailController.text = client.email ?? '';
+          _addressController.text = client.address ?? '';
+          _notesController.text = client.notes ?? '';
+        }
+
+        final jobs = ref.watch(jobsByOrgProvider(orgId)).valueOrNull ??
+            const <LocalJob>[];
+        final history = jobs.where((job) {
+          if (job.deletedAt != null) return false;
+          if (client.sourceLeadId != null && client.sourceLeadId!.isNotEmpty) {
+            return job.leadId == client.sourceLeadId;
+          }
+          return job.clientName.trim().toLowerCase() ==
+              client.name.trim().toLowerCase();
+        }).toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+        return _buildScaffold(
+          orgId: orgId,
+          existing: client,
+          history: history,
+        );
+      },
+    );
+  }
+
+  Widget _buildScaffold({
+    required String orgId,
+    required LocalClient? existing,
+    required List<LocalJob> history,
+  }) {
+    final title = existing != null
+        ? existing.name
+        : widget.prefillLeadId != null
+            ? 'Convert to Client'
+            : 'New Client';
+    final subtitle = existing != null
+        ? null
+        : widget.prefillName != null && widget.prefillName!.isNotEmpty
+            ? 'from lead: ${widget.prefillName!}'
+            : 'Add an existing client manually';
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
           children: [
             Row(
               children: [
                 IconButton(
                   onPressed: () => context.pop(),
-                  icon: const Icon(Icons.chevron_left),
+                  icon: const Icon(Icons.chevron_left,
+                      color: AppColors.foreground, size: 24),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 2),
                 Expanded(
-                  child: Text(
-                    widget.prefillName?.isNotEmpty == true
-                        ? 'Convert to Client'
-                        : 'New Client',
-                    style: theme.textTheme.headlineMedium,
-                  ),
+                  child: Text(title,
+                      style: AppTextStyles.h1,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            if (widget.prefillName?.isNotEmpty == true)
-              Text(
-                'from lead: ${widget.prefillName}',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.outline),
-              ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle, style: AppTextStyles.secondary),
+            ],
             const SizedBox(height: 16),
-            TextField(
+            _FieldCard(
               controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Name *',
-                border: OutlineInputBorder(),
-              ),
+              hint: 'Name',
             ),
-            const SizedBox(height: 12),
-            TextField(
+            const SizedBox(height: 10),
+            _FieldCard(
               controller: _phoneController,
+              hint: 'Phone',
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Phone *',
-                border: OutlineInputBorder(),
-              ),
             ),
-            const SizedBox(height: 12),
-            TextField(
+            const SizedBox(height: 10),
+            _FieldCard(
               controller: _emailController,
+              hint: 'Email',
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
             ),
-            const SizedBox(height: 12),
-            TextField(
+            const SizedBox(height: 10),
+            _FieldCard(
               controller: _addressController,
-              decoration: const InputDecoration(
-                labelText: 'Address',
-                border: OutlineInputBorder(),
-              ),
+              hint: 'Address',
             ),
-            const SizedBox(height: 12),
-            TextField(
+            const SizedBox(height: 10),
+            _FieldCard(
               controller: _notesController,
+              hint: 'Notes',
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Notes',
-                border: OutlineInputBorder(),
-              ),
             ),
-            const SizedBox(height: 18),
-            Text(
-              'Previous Projects',
-              style: theme.textTheme.labelLarge
-                  ?.copyWith(color: theme.colorScheme.outline),
-            ),
+            const SizedBox(height: 16),
+            Text('PREVIOUS PROJECTS', style: AppTextStyles.sectionLabel),
             const SizedBox(height: 8),
-            if (_projects.isNotEmpty)
-              ..._projects.map(
-                (project) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                    decoration: BoxDecoration(
-                      color: AppTokens.glassElevated,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppTokens.glassBorder),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.check_circle_outline,
-                            color: AppTokens.success, size: 18),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(project.jobType),
-                              Text(
-                                '${project.completedAt.month}/${project.completedAt.day}/${project.completedAt.year}',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.outline,
-                                ),
-                              ),
-                              if (project.notes.isNotEmpty)
-                                Text(
-                                  project.notes,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.outline,
-                                  ),
-                                ),
-                            ],
-                          ),
+            for (final job in history)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: GlassCard(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(job.jobType,
+                                style: AppTextStyles.h4.copyWith(fontSize: 15)),
+                            const SizedBox(height: 2),
+                            Text(
+                              DateFormat('MMM d, yyyy')
+                                  .format(job.updatedAt.toLocal()),
+                              style: AppTextStyles.tiny.copyWith(fontSize: 13),
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _projects.removeWhere((p) => p.id == project.id);
-                            });
-                          },
-                          icon: const Icon(Icons.close),
+                      ),
+                      IconButton(
+                        onPressed: () => context.push(
+                          AppRoutes.jobDetail.replaceFirst(':jobId', job.id),
                         ),
-                      ],
-                    ),
+                        icon: const Icon(Icons.chevron_right,
+                            color: AppColors.mutedFg),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            for (var i = 0; i < _draftProjects.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: GlassCard(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _draftProjects[i].jobType,
+                          style: AppTextStyles.h4.copyWith(fontSize: 15),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          setState(() => _draftProjects.removeAt(i));
+                        },
+                        icon: const Icon(Icons.close,
+                            color: AppColors.mutedFg, size: 16),
+                      ),
+                    ],
                   ),
                 ),
               ),
             if (_addingProject) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTokens.glassElevated,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppTokens.glassBorder),
-                ),
+              GlassCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: _projectTypes
-                          .map(
-                            (type) => ChoiceChip(
-                              selected: _draftJobType == type,
-                              label: Text(type),
-                              onSelected: (_) {
-                                setState(() => _draftJobType = type);
-                              },
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final type in _jobTypes)
+                          GestureDetector(
+                            onTap: () => setState(() => _draftJobType = type),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: _draftJobType == type
+                                    ? AppColors.systemBlue
+                                    : AppColors.glassProminent,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                type,
+                                style: AppTextStyles.label.copyWith(
+                                  letterSpacing: 0,
+                                  color: _draftJobType == type
+                                      ? Colors.white
+                                      : AppColors.foreground,
+                                ),
+                              ),
                             ),
-                          )
-                          .toList(),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: _pickDraftDate,
-                      icon: const Icon(Icons.calendar_today_outlined),
-                      label: Text(dateLabel),
+                    OutlinedButton(
+                      onPressed: () async {
+                        final now = DateTime.now();
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _draftDate ?? now,
+                          firstDate: DateTime(now.year - 10),
+                          lastDate: DateTime(now.year + 10),
+                        );
+                        if (picked != null) {
+                          setState(() => _draftDate = picked);
+                        }
+                      },
+                      child: Text(
+                        _draftDate == null
+                            ? 'Select date'
+                            : DateFormat('MMM d, yyyy').format(_draftDate!),
+                        style: AppTextStyles.h4.copyWith(fontSize: 15),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _draftNotesController,
-                      decoration: const InputDecoration(
-                        labelText: 'Project notes (optional)',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        hintText: 'Project notes',
+                        hintStyle: AppTextStyles.secondary,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -324,16 +409,43 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                       children: [
                         Expanded(
                           child: FilledButton(
-                            onPressed: _canAddProject ? _addProjectDraft : null,
+                            onPressed: (_draftJobType.isNotEmpty &&
+                                    _draftDate != null)
+                                ? () {
+                                    setState(() {
+                                      _draftProjects.add(
+                                        _ProjectDraft(
+                                          jobType: _draftJobType,
+                                          date: _draftDate!,
+                                          notes:
+                                              _draftNotesController.text.trim(),
+                                        ),
+                                      );
+                                      _addingProject = false;
+                                      _draftJobType = '';
+                                      _draftDate = null;
+                                      _draftNotesController.clear();
+                                    });
+                                  }
+                                : null,
                             child: const Text('Add'),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: () =>
-                                setState(() => _addingProject = false),
-                            child: const Text('Cancel'),
+                            onPressed: () {
+                              setState(() {
+                                _addingProject = false;
+                                _draftJobType = '';
+                                _draftDate = null;
+                                _draftNotesController.clear();
+                              });
+                            },
+                            child: Text(
+                              'Cancel',
+                              style: AppTextStyles.h4.copyWith(fontSize: 15),
+                            ),
                           ),
                         ),
                       ],
@@ -341,21 +453,51 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
-            ],
-            if (!_addingProject)
-              OutlinedButton.icon(
-                onPressed: () => setState(() => _addingProject = true),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Previous Project'),
+            ] else ...[
+              GestureDetector(
+                onTap: () => setState(() => _addingProject = true),
+                child: GlassCard(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.add,
+                          color: AppColors.systemBlue, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Add Project',
+                        style: AppTextStyles.h4.copyWith(
+                          fontSize: 15,
+                          color: AppColors.systemBlue,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
+            ],
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: _canSaveClient ? _saveClient : null,
+              onPressed: _canSave
+                  ? () => _saveClient(orgId: orgId, existing: existing)
+                  : null,
               style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(50),
+                backgroundColor: AppColors.systemBlue,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(56),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                textStyle: AppTextStyles.buttonPrimary,
               ),
-              child: const Text('Save Client'),
+              child: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Save Client'),
             ),
           ],
         ),
@@ -364,16 +506,48 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
   }
 }
 
+class _FieldCard extends StatelessWidget {
+  const _FieldCard({
+    required this.controller,
+    required this.hint,
+    this.keyboardType,
+    this.maxLines = 1,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final TextInputType? keyboardType;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: TextField(
+        controller: controller,
+        maxLines: maxLines,
+        keyboardType: keyboardType,
+        style: AppTextStyles.body,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: AppTextStyles.body.copyWith(color: AppColors.mutedFg),
+          border: InputBorder.none,
+          isCollapsed: true,
+          filled: false,
+        ),
+      ),
+    );
+  }
+}
+
 class _ProjectDraft {
   const _ProjectDraft({
-    required this.id,
     required this.jobType,
-    required this.completedAt,
+    required this.date,
     required this.notes,
   });
 
-  final String id;
   final String jobType;
-  final DateTime completedAt;
+  final DateTime date;
   final String notes;
 }

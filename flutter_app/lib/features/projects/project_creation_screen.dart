@@ -6,12 +6,14 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../app/router/app_router.dart';
-import '../../core/constants/app_tokens.dart';
 import '../../core/domain/job_health_status.dart';
 import '../../core/domain/job_phase.dart';
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
-import '../auth/providers/auth_provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../features/auth/providers/auth_provider.dart';
+import '../../shared/widgets/glass_card.dart';
 
 const _uuid = Uuid();
 
@@ -104,9 +106,7 @@ class _ProjectCreationScreenState extends ConsumerState<ProjectCreationScreen> {
   }
 
   Future<void> _saveProject(String orgId) async {
-    if (!_canSave) {
-      return;
-    }
+    if (!_canSave) return;
 
     setState(() => _saving = true);
 
@@ -132,14 +132,10 @@ class _ProjectCreationScreenState extends ConsumerState<ProjectCreationScreen> {
 
       await ref.read(jobsDaoProvider).createJob(companion);
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       context.go(AppRoutes.jobs);
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not save project: $error')),
       );
@@ -149,7 +145,6 @@ class _ProjectCreationScreenState extends ConsumerState<ProjectCreationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final authAsync = ref.watch(authProvider);
     final orgId = authAsync.valueOrNull?.profile?.organizationId ?? '';
 
@@ -160,6 +155,7 @@ class _ProjectCreationScreenState extends ConsumerState<ProjectCreationScreen> {
     final leadsAsync = ref.watch(allLeadsProvider(orgId));
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: leadsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -168,183 +164,212 @@ class _ProjectCreationScreenState extends ConsumerState<ProjectCreationScreen> {
           ),
           data: (leads) {
             if (!_didAutoHydrateLead && _linkedLeadId != null) {
-              LocalLead? linkedLead;
-              for (final lead in leads) {
-                if (lead.id == _linkedLeadId) {
-                  linkedLead = lead;
-                  break;
-                }
-              }
+              final linkedLead =
+                  leads.where((lead) => lead.id == _linkedLeadId).firstOrNull;
               _didAutoHydrateLead = true;
               if (linkedLead != null &&
                   _clientNameController.text.trim().isEmpty &&
                   _jobTypeController.text.trim().isEmpty) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) {
-                    _linkLead(linkedLead!);
-                  }
+                  if (mounted) _linkLead(linkedLead);
                 });
               }
             }
 
             final query = _leadSearchController.text.trim().toLowerCase();
             final matchingLeads = leads
-                .where(
-                  (lead) => lead.clientName.toLowerCase().contains(query),
-                )
+                .where((lead) => lead.clientName.toLowerCase().contains(query))
                 .take(5)
                 .toList();
 
-            final completionLabel = _estimatedCompletion == null
-                ? 'Select estimated completion date'
-                : DateFormat.yMMMMd().format(_estimatedCompletion!);
-
             return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               children: [
                 Row(
                   children: [
                     IconButton(
                       onPressed: () => context.pop(),
-                      icon: const Icon(Icons.chevron_left),
+                      icon: const Icon(
+                        Icons.chevron_left,
+                        color: AppColors.foreground,
+                        size: 24,
+                      ),
                     ),
-                    const SizedBox(width: 6),
-                    Text('New Project', style: theme.textTheme.headlineMedium),
+                    const SizedBox(width: 2),
+                    Text('New Project', style: AppTextStyles.h1),
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
                   'Create a job and start tracking progress.',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.outline),
+                  style: AppTextStyles.secondary,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 Text(
-                  'Link to Existing Lead (optional)',
-                  style: theme.textTheme.labelMedium
-                      ?.copyWith(color: theme.colorScheme.outline),
+                  'LINK TO EXISTING LEAD (optional)',
+                  style: AppTextStyles.sectionLabel,
                 ),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: _leadSearchController,
-                  onTap: () => setState(() => _showLeadSearchResults = true),
-                  onChanged: (_) {
-                    setState(() {
-                      _showLeadSearchResults = true;
-                      _linkedLeadId = null;
-                    });
-                  },
-                  decoration: const InputDecoration(
-                    hintText: 'Search lead by name',
-                    prefixIcon: Icon(Icons.search),
-                    border: OutlineInputBorder(),
+                GlassCard(
+                  padding: EdgeInsets.zero,
+                  borderRadius: 12,
+                  child: Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      const Positioned(
+                        left: 12,
+                        child: Icon(
+                          Icons.search,
+                          size: 16,
+                          color: AppColors.mutedFg,
+                        ),
+                      ),
+                      TextField(
+                        controller: _leadSearchController,
+                        onTap: () =>
+                            setState(() => _showLeadSearchResults = true),
+                        onChanged: (_) {
+                          setState(() {
+                            _showLeadSearchResults = true;
+                            _linkedLeadId = null;
+                          });
+                        },
+                        style: AppTextStyles.body,
+                        decoration: InputDecoration(
+                          hintText: 'Search lead by name',
+                          hintStyle: AppTextStyles.body
+                              .copyWith(color: AppColors.mutedFg),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding:
+                              const EdgeInsets.fromLTRB(40, 12, 16, 12),
+                          filled: false,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 if (_showLeadSearchResults && matchingLeads.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTokens.glassBorder),
-                      color: AppTokens.glassElevated,
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: matchingLeads.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final lead = matchingLeads[index];
-                        return ListTile(
-                          onTap: () => _linkLead(lead),
-                          leading: const Icon(Icons.link_outlined),
-                          title: Text(lead.clientName),
-                          subtitle: Text(
-                              '${lead.phoneE164 ?? 'No phone'} · ${lead.jobType}'),
-                        );
-                      },
+                  GlassCard(
+                    padding: EdgeInsets.zero,
+                    borderRadius: 12,
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < matchingLeads.length; i++) ...[
+                          if (i > 0)
+                            const Divider(
+                                height: 1, color: AppColors.glassBorder),
+                          InkWell(
+                            onTap: () => _linkLead(matchingLeads[i]),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.link,
+                                      size: 16, color: AppColors.systemBlue),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          matchingLeads[i].clientName,
+                                          style: AppTextStyles.h4.copyWith(
+                                            fontSize: 15,
+                                            color: AppColors.foreground,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${matchingLeads[i].phoneE164 ?? 'No phone'} · ${matchingLeads[i].jobType}',
+                                          style: AppTextStyles.tiny
+                                              .copyWith(fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
-                const SizedBox(height: 18),
-                TextField(
+                const SizedBox(height: 12),
+                _FieldCard(
                   controller: _clientNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Client Name',
-                    border: OutlineInputBorder(),
-                  ),
+                  hint: 'Client Name',
+                  onChanged: (_) => setState(() {}),
                 ),
-                const SizedBox(height: 12),
-                TextField(
+                const SizedBox(height: 10),
+                _FieldCard(
                   controller: _phoneController,
+                  hint: 'Phone',
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone',
-                    border: OutlineInputBorder(),
-                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                const SizedBox(height: 12),
-                TextField(
+                const SizedBox(height: 10),
+                _FieldCard(
                   controller: _jobTypeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Job Type',
-                    border: OutlineInputBorder(),
-                  ),
+                  hint: 'Job Type',
+                  onChanged: (_) => setState(() {}),
                 ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _pickEstimatedCompletion,
-                  icon: const Icon(Icons.calendar_today_outlined),
-                  label: Text(completionLabel),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                  ),
+                const SizedBox(height: 10),
+                _PickerCard(
+                  label: _estimatedCompletion == null
+                      ? 'Est. Completion'
+                      : DateFormat('MMM d, yyyy').format(_estimatedCompletion!),
+                  onTap: _pickEstimatedCompletion,
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<JobPhase>(
-                  initialValue: _phase,
-                  decoration: const InputDecoration(
-                    labelText: 'Starting Phase',
-                    border: OutlineInputBorder(),
-                  ),
+                const SizedBox(height: 10),
+                _DropdownCard<JobPhase>(
+                  label: 'Starting Phase',
+                  value: _phase,
                   items: JobPhase.orderedValues
-                      .map(
-                        (phase) => DropdownMenuItem<JobPhase>(
-                          value: phase,
-                          child: Text(phase.displayLabel),
-                        ),
-                      )
+                      .map((phase) => DropdownMenuItem(
+                            value: phase,
+                            child: Text(phase.displayLabel),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     if (value == null) return;
                     setState(() => _phase = value);
                   },
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<JobHealthStatus>(
-                  initialValue: _healthStatus,
-                  decoration: const InputDecoration(
-                    labelText: 'Status',
-                    border: OutlineInputBorder(),
-                  ),
+                const SizedBox(height: 10),
+                _DropdownCard<JobHealthStatus>(
+                  label: 'Status',
+                  value: _healthStatus,
                   items: JobHealthStatus.values
-                      .map(
-                        (status) => DropdownMenuItem<JobHealthStatus>(
-                          value: status,
-                          child: Text(status.displayLabel),
-                        ),
-                      )
+                      .map((status) => DropdownMenuItem(
+                            value: status,
+                            child: Text(status.displayLabel),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     if (value == null) return;
                     setState(() => _healthStatus = value);
                   },
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _canSave ? () => _saveProject(orgId) : null,
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(50),
+                    backgroundColor: AppColors.systemBlue,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(56),
+                    disabledBackgroundColor:
+                        AppColors.systemBlue.withValues(alpha: 0.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    textStyle: AppTextStyles.buttonPrimary,
                   ),
                   child: _saving
                       ? const SizedBox(
@@ -360,6 +385,96 @@ class _ProjectCreationScreenState extends ConsumerState<ProjectCreationScreen> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _FieldCard extends StatelessWidget {
+  const _FieldCard({
+    required this.controller,
+    required this.hint,
+    this.keyboardType,
+    this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final TextInputType? keyboardType;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        onChanged: onChanged,
+        style: AppTextStyles.body,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: AppTextStyles.body.copyWith(color: AppColors.mutedFg),
+          border: InputBorder.none,
+          isCollapsed: true,
+          filled: false,
+        ),
+      ),
+    );
+  }
+}
+
+class _PickerCard extends StatelessWidget {
+  const _PickerCard({
+    required this.label,
+    required this.onTap,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: GlassCard(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          label,
+          style: AppTextStyles.body,
+        ),
+      ),
+    );
+  }
+}
+
+class _DropdownCard<T> extends StatelessWidget {
+  const _DropdownCard({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final String label;
+  final T value;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: AppColors.background,
+          style: AppTextStyles.body,
+          hint: Text(label, style: AppTextStyles.secondary),
+          items: items,
+          onChanged: onChanged,
         ),
       ),
     );

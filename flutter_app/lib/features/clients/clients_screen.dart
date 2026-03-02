@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../app/router/app_router.dart';
-import '../../core/constants/app_tokens.dart';
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
-import '../auth/providers/auth_provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../features/auth/providers/auth_provider.dart';
+import '../../shared/widgets/glass_card.dart';
 
 class ClientsScreen extends ConsumerStatefulWidget {
   const ClientsScreen({super.key});
@@ -17,7 +19,7 @@ class ClientsScreen extends ConsumerStatefulWidget {
 }
 
 class _ClientsScreenState extends ConsumerState<ClientsScreen> {
-  final TextEditingController _searchController = TextEditingController();
+  final _searchController = TextEditingController();
 
   @override
   void dispose() {
@@ -34,82 +36,125 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final leadsAsync = ref.watch(allLeadsProvider(orgId));
+    final clientsAsync = ref.watch(clientsByOrgProvider(orgId));
     final jobsAsync = ref.watch(jobsByOrgProvider(orgId));
     final query = _searchController.text.trim().toLowerCase();
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: leadsAsync.when(
+        child: clientsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(
             child: Text('Error loading clients: $error'),
           ),
-          data: (leads) => jobsAsync.when(
+          data: (clients) => jobsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, _) => Center(
               child: Text('Error loading clients: $error'),
             ),
             data: (jobs) {
-              final clients = _buildClientSummaries(leads: leads, jobs: jobs);
               final filtered = query.isEmpty
                   ? clients
                   : clients.where((client) {
                       return client.name.toLowerCase().contains(query) ||
-                          client.phone.toLowerCase().contains(query);
+                          (client.phone ?? '').toLowerCase().contains(query) ||
+                          (client.email ?? '').toLowerCase().contains(query);
                     }).toList();
 
               return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
                 children: [
                   Row(
                     children: [
-                      Expanded(
-                        child: Text(
-                          'Clients',
-                          style: Theme.of(context).textTheme.headlineMedium,
-                        ),
-                      ),
+                      Expanded(child: Text('Clients', style: AppTextStyles.h1)),
                       GestureDetector(
                         onTap: () => context.push(AppRoutes.clientCreate),
                         child: Container(
-                          width: 40,
-                          height: 40,
+                          width: 36,
+                          height: 36,
                           decoration: const BoxDecoration(
-                            color: AppTokens.primary,
+                            color: AppColors.systemBlue,
                             shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Color.fromRGBO(0, 122, 255, 0.35),
-                                blurRadius: 12,
-                                spreadRadius: 1,
-                              ),
-                            ],
                           ),
-                          child: const Icon(
-                            Icons.add_rounded,
-                            color: Colors.white,
-                            size: 24,
-                          ),
+                          child: const Icon(Icons.add,
+                              color: Colors.white, size: 20),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
-                  _SearchInput(
-                    controller: _searchController,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 14),
-                  if (filtered.isEmpty)
-                    const _EmptyState()
-                  else
-                    ...filtered.map(
-                      (client) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _ClientCard(client: client),
-                      ),
+                  const SizedBox(height: 12),
+                  GlassCard(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+                    borderRadius: 12,
+                    child: Stack(
+                      alignment: Alignment.centerLeft,
+                      children: [
+                        const Positioned(
+                          left: 12,
+                          child: Icon(
+                            Icons.search,
+                            size: 16,
+                            color: AppColors.mutedFg,
+                          ),
+                        ),
+                        TextField(
+                          controller: _searchController,
+                          onChanged: (_) => setState(() {}),
+                          style: AppTextStyles.body,
+                          decoration: InputDecoration(
+                            hintText: 'Search clients...',
+                            hintStyle: AppTextStyles.body
+                                .copyWith(color: AppColors.mutedFg),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding:
+                                const EdgeInsets.fromLTRB(40, 12, 16, 12),
+                            filled: false,
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (filtered.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 80),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.account_circle_outlined,
+                            size: 56,
+                            color: AppColors.mutedFg.withValues(alpha: 0.3),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No clients found',
+                            style: AppTextStyles.secondary.copyWith(
+                              fontSize: 17,
+                              color: AppColors.mutedFg,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Tap + to add your first client',
+                            style: AppTextStyles.label.copyWith(
+                              color: AppColors.mutedFg.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    for (final client in filtered)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _ClientCard(
+                          client: client,
+                          jobs: jobs,
+                        ),
+                      ),
                 ],
               );
             },
@@ -120,265 +165,105 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
   }
 }
 
-class _SearchInput extends StatelessWidget {
-  const _SearchInput({
-    required this.controller,
-    required this.onChanged,
+class _ClientCard extends StatelessWidget {
+  const _ClientCard({
+    required this.client,
+    required this.jobs,
   });
 
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
+  final LocalClient client;
+  final List<LocalJob> jobs;
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      onChanged: onChanged,
-      style: Theme.of(context).textTheme.bodyLarge,
-      decoration: InputDecoration(
-        hintText: 'Search clients...',
-        prefixIcon: Icon(
-          Icons.search,
-          color: Theme.of(context).colorScheme.outline,
-        ),
-        filled: true,
-        fillColor: AppTokens.glassElevated,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppTokens.glassBorder),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppTokens.glassBorder),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppTokens.primary),
-        ),
+    final linkedJobs = jobs.where((job) {
+      if (client.sourceLeadId != null &&
+          (client.sourceLeadId as String).isNotEmpty) {
+        return job.leadId == client.sourceLeadId;
+      }
+      return job.clientName.trim().toLowerCase() ==
+          client.name.trim().toLowerCase();
+    }).toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+    String? lastProjectText;
+    if (linkedJobs.isNotEmpty) {
+      final latest = linkedJobs.first;
+      final date = DateFormat('MMM yyyy').format(latest.updatedAt.toLocal());
+      lastProjectText = 'Last project: ${latest.jobType} · $date';
+    }
+
+    return GestureDetector(
+      onTap: () => context.push(
+        AppRoutes.clientDetail.replaceFirst(':clientId', client.id),
       ),
-    );
-  }
-}
-
-class _ClientCard extends StatelessWidget {
-  const _ClientCard({required this.client});
-
-  final _ClientSummary client;
-
-  @override
-  Widget build(BuildContext context) {
-    final lastProjectLabel = client.lastProjectType == null
-        ? null
-        : 'Last: ${client.lastProjectType} · ${DateFormat('MMM yyyy').format(client.lastActivityAt)}';
-
-    return Material(
-      color: AppTokens.glassElevated,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () => context.push(
-          AppRoutes.clientDetail.replaceFirst(':clientId', client.id),
-        ),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppTokens.glassBorder),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppTokens.primary.withValues(alpha: 0.25),
-                ),
-                child: Center(
-                  child: Text(
-                    client.name.isEmpty ? '?' : client.name[0].toUpperCase(),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: AppTokens.primary,
-                        ),
-                  ),
+      child: GlassCard(
+        padding: const EdgeInsets.all(16),
+        borderRadius: 16,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.systemBlue.withValues(alpha: 0.2),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                client.name.isEmpty ? '?' : client.name[0].toUpperCase(),
+                style: AppTextStyles.h3.copyWith(
+                  fontSize: 17,
+                  color: AppColors.systemBlue,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            client.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontSize: 30 / 2),
-                          ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          client.name,
+                          style: AppTextStyles.h3.copyWith(fontSize: 17),
                         ),
-                        const SizedBox(width: 10),
-                        Text(
-                          '${client.projectCount} project${client.projectCount == 1 ? '' : 's'}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      client.phone,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                    ),
-                    if (lastProjectLabel != null) ...[
-                      const SizedBox(height: 4),
+                      ),
                       Text(
-                        lastProjectLabel,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .outline
-                                  .withValues(alpha: 0.7),
-                            ),
+                        '${client.projectCount}',
+                        style: AppTextStyles.tiny.copyWith(
+                          fontSize: 12,
+                          color: AppColors.mutedFg,
+                        ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    client.phone?.trim().isNotEmpty == true
+                        ? client.phone!
+                        : 'No phone on file',
+                    style: AppTextStyles.secondary.copyWith(fontSize: 14),
+                  ),
+                  if (lastProjectText != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      lastProjectText,
+                      style: AppTextStyles.tiny.copyWith(
+                        fontSize: 12,
+                        color: AppColors.mutedFg.withValues(alpha: 0.6),
+                      ),
+                    ),
                   ],
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 46),
-      child: Column(
-        children: [
-          Icon(
-            Icons.account_circle_outlined,
-            size: 56,
-            color:
-                Theme.of(context).colorScheme.outline.withValues(alpha: 0.45),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'No clients found',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Tap + to add your first client',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ClientSummary {
-  const _ClientSummary({
-    required this.id,
-    required this.name,
-    required this.phone,
-    required this.projectCount,
-    required this.lastActivityAt,
-    required this.lastProjectType,
-  });
-
-  final String id;
-  final String name;
-  final String phone;
-  final int projectCount;
-  final DateTime lastActivityAt;
-  final String? lastProjectType;
-}
-
-class _MutableClientSummary {
-  _MutableClientSummary({
-    required this.id,
-    required this.name,
-  });
-
-  final String id;
-  final String name;
-  String phone = 'No phone on file';
-  int projectCount = 0;
-  DateTime? lastActivityAt;
-  String? lastProjectType;
-}
-
-List<_ClientSummary> _buildClientSummaries({
-  required List<LocalLead> leads,
-  required List<LocalJob> jobs,
-}) {
-  final summaries = <String, _MutableClientSummary>{};
-
-  _MutableClientSummary readOrCreate(String name) {
-    final normalizedName = name.trim().toLowerCase();
-    return summaries.putIfAbsent(
-      normalizedName,
-      () => _MutableClientSummary(
-        id: 'client-${normalizedName.replaceAll(RegExp(r'[^a-z0-9]+'), '-')}',
-        name: name,
-      ),
-    );
-  }
-
-  for (final lead in leads) {
-    final summary = readOrCreate(lead.clientName);
-    if (lead.phoneE164 != null && lead.phoneE164!.trim().isNotEmpty) {
-      summary.phone = lead.phoneE164!;
-    }
-    if (summary.lastActivityAt == null ||
-        lead.updatedAt.isAfter(summary.lastActivityAt!)) {
-      summary.lastActivityAt = lead.updatedAt;
-      summary.lastProjectType = lead.jobType;
-    }
-  }
-
-  for (final job in jobs) {
-    final summary = readOrCreate(job.clientName);
-    summary.projectCount++;
-    if (summary.lastActivityAt == null ||
-        job.updatedAt.isAfter(summary.lastActivityAt!)) {
-      summary.lastActivityAt = job.updatedAt;
-      summary.lastProjectType = job.jobType;
-    }
-  }
-
-  return summaries.values.map((summary) {
-    return _ClientSummary(
-      id: summary.id,
-      name: summary.name,
-      phone: summary.phone,
-      projectCount: summary.projectCount,
-      lastActivityAt: summary.lastActivityAt ?? DateTime.now(),
-      lastProjectType: summary.lastProjectType,
-    );
-  }).toList()
-    ..sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
 }

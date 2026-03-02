@@ -10,7 +10,8 @@ class WorkspaceSetupScreen extends ConsumerStatefulWidget {
   const WorkspaceSetupScreen({super.key});
 
   @override
-  ConsumerState<WorkspaceSetupScreen> createState() => _WorkspaceSetupScreenState();
+  ConsumerState<WorkspaceSetupScreen> createState() =>
+      _WorkspaceSetupScreenState();
 }
 
 class _WorkspaceSetupScreenState extends ConsumerState<WorkspaceSetupScreen> {
@@ -63,7 +64,7 @@ class _WorkspaceSetupScreenState extends ConsumerState<WorkspaceSetupScreen> {
       if (!mounted) {
         return;
       }
-      context.go(AppRoutes.home);
+      context.go(AppRoutes.permissions);
     } catch (error, stackTrace) {
       debugPrint('Workspace bootstrap failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -104,7 +105,9 @@ class _WorkspaceSetupScreenState extends ConsumerState<WorkspaceSetupScreen> {
       }
     }
 
-    return raw.isNotEmpty ? raw : 'Could not create workspace. Please try again.';
+    return raw.isNotEmpty
+        ? raw
+        : 'Could not create workspace. Please try again.';
   }
 
   @override
@@ -168,12 +171,14 @@ class _WorkspaceSetupScreenState extends ConsumerState<WorkspaceSetupScreen> {
                     SizedBox(
                       height: 52,
                       child: FilledButton(
-                        onPressed: _isSubmitting ? null : _handleContinuePressed,
+                        onPressed:
+                            _isSubmitting ? null : _handleContinuePressed,
                         child: _isSubmitting
                             ? const SizedBox(
                                 width: 20,
                                 height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Text('Create Workspace'),
                       ),
@@ -205,7 +210,10 @@ class _WorkspaceSetupScreenState extends ConsumerState<WorkspaceSetupScreen> {
                   icon: Icons.error_outline,
                 ),
               ],
-              if (_submitted && _isFormValid && _errorMessage == null && !_isSubmitting) ...[
+              if (_submitted &&
+                  _isFormValid &&
+                  _errorMessage == null &&
+                  !_isSubmitting) ...[
                 const SizedBox(height: 16),
                 const _StatusCard(
                   title: 'Ready to create workspace',
@@ -276,7 +284,9 @@ class _StatusCard extends StatelessWidget {
                 children: [
                   Text(title, style: textTheme.titleMedium),
                   const SizedBox(height: 4),
-                  Text(body, style: textTheme.bodyLarge?.copyWith(color: Colors.white70)),
+                  Text(body,
+                      style:
+                          textTheme.bodyLarge?.copyWith(color: Colors.white70)),
                 ],
               ),
             ),

@@ -2,13 +2,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../network/supabase_client.dart';
 import '../notifications/notification_service.dart';
+import '../services/photo_upload_service.dart';
 import '../services/lead_actions_service.dart';
 import '../sync/device_registration_service.dart';
 import '../sync/sync_engine.dart';
 import '../sync/sync_status.dart';
 import 'app_database.dart';
 import 'daos/call_logs_dao.dart';
+import 'daos/clients_dao.dart';
 import 'daos/followups_dao.dart';
+import 'daos/job_photos_dao.dart';
 import 'daos/jobs_dao.dart';
 import 'daos/leads_dao.dart';
 import 'daos/organizations_dao.dart';
@@ -50,6 +53,20 @@ final organizationsDaoProvider = Provider<OrganizationsDao>((ref) {
   return ref.watch(appDatabaseProvider).organizationsDao;
 });
 
+final jobPhotosDaoProvider = Provider<JobPhotosDao>((ref) {
+  return ref.watch(appDatabaseProvider).jobPhotosDao;
+});
+
+final clientsDaoProvider = Provider<ClientsDao>((ref) {
+  return ref.watch(appDatabaseProvider).clientsDao;
+});
+
+final photoUploadServiceProvider = Provider<PhotoUploadService>((ref) {
+  return PhotoUploadService(
+    jobPhotosDao: ref.watch(jobPhotosDaoProvider),
+  );
+});
+
 // ── Sync Engine ─────────────────────────────────────────────────────
 
 final syncEngineProvider = Provider<SyncEngine>((ref) {
@@ -61,6 +78,7 @@ final syncEngineProvider = Provider<SyncEngine>((ref) {
     db: db,
     supabaseClient: supabase,
     deviceRegistrationService: deviceRegistrationService,
+    photoUploadService: ref.watch(photoUploadServiceProvider),
   );
   engine.startListening();
   ref.onDispose(() => engine.dispose());
@@ -81,6 +99,8 @@ final leadActionsServiceProvider = Provider<LeadActionsService>((ref) {
     followupsDao: ref.watch(followupsDaoProvider),
     organizationsDao: ref.watch(organizationsDaoProvider),
     notificationScheduler: NotificationService.instance,
+    supabaseClient: ref.watch(supabaseClientProvider),
+    syncEngine: ref.watch(syncEngineProvider),
   );
 });
 
@@ -88,6 +108,19 @@ final leadActionsServiceProvider = Provider<LeadActionsService>((ref) {
 final syncStatusProvider = StreamProvider<SyncStatus>((ref) {
   final engine = ref.watch(syncEngineProvider);
   return engine.statusStream;
+});
+
+/// Stream of sync diagnostics for Settings UI.
+final syncDiagnosticsProvider = StreamProvider<SyncDiagnostics>((ref) {
+  final engine = ref.watch(syncEngineProvider);
+  return engine.diagnosticsStream;
+});
+
+/// Last registered server-side device id for the current install.
+final registeredServerDeviceIdProvider = FutureProvider<String?>((ref) async {
+  return ref
+      .watch(deviceRegistrationServiceProvider)
+      .readRegisteredServerDeviceId();
 });
 
 // ── Reactive Streams for UI ─────────────────────────────────────────
@@ -132,6 +165,12 @@ final jobsByOrgProvider = StreamProvider.family<List<LocalJob>, String>(
   },
 );
 
+final leadByIdProvider = StreamProvider.family<LocalLead?, String>(
+  (ref, leadId) {
+    return ref.watch(leadsDaoProvider).watchLeadById(leadId);
+  },
+);
+
 /// Watch the active job linked to a lead.
 final jobForLeadProvider = StreamProvider.family<LocalJob?, String>(
   (ref, leadId) {
@@ -156,11 +195,39 @@ final jobByIdProvider = StreamProvider.family<LocalJob?, String>(
   },
 );
 
+final photosByJobProvider = StreamProvider.family<List<LocalJobPhoto>, String>(
+  (ref, jobId) {
+    return ref.watch(jobPhotosDaoProvider).watchPhotosByJob(jobId);
+  },
+);
+
+final clientsByOrgProvider = StreamProvider.family<List<LocalClient>, String>(
+  (ref, orgId) {
+    return ref.watch(clientsDaoProvider).watchClientsByOrg(orgId);
+  },
+);
+
+final clientByIdProvider = StreamProvider.family<LocalClient?, String>(
+  (ref, clientId) {
+    return ref.watch(clientsDaoProvider).watchClientById(clientId);
+  },
+);
+
 /// Watch follow-up sequence for a lead.
 final followupSequenceByLeadProvider =
     StreamProvider.family<LocalFollowupSequence?, String>(
   (ref, leadId) {
     return ref.watch(followupsDaoProvider).watchSequenceByLeadId(leadId);
+  },
+);
+
+/// Watch follow-up messages for a sequence.
+final followupMessagesBySequenceProvider =
+    StreamProvider.family<List<LocalFollowupMessage>, String>(
+  (ref, sequenceId) {
+    return ref
+        .watch(followupsDaoProvider)
+        .watchMessagesBySequenceId(sequenceId);
   },
 );
 

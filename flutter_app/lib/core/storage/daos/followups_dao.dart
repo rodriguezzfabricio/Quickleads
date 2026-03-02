@@ -41,7 +41,10 @@ class FollowupsDao extends DatabaseAccessor<AppDatabase>
   ) {
     return (select(localFollowupMessages)
           ..where((m) => m.sequenceId.equals(sequenceId))
-          ..orderBy([(m) => OrderingTerm.asc(m.stepNumber)]))
+          ..orderBy([
+            (m) => OrderingTerm.asc(m.stepNumber),
+            (m) => OrderingTerm.asc(m.channel),
+          ]))
         .watch();
   }
 
@@ -94,16 +97,33 @@ class FollowupsDao extends DatabaseAccessor<AppDatabase>
         stoppedAt: newState == 'stopped' ? Value(now) : const Value.absent(),
         completedAt:
             newState == 'completed' ? Value(now) : const Value.absent(),
+        nextSendAt: (newState == 'paused' ||
+                newState == 'stopped' ||
+                newState == 'completed')
+            ? const Value(null)
+            : const Value.absent(),
       );
       await (update(localFollowupSequences)
             ..where((s) => s.id.equals(sequenceId)))
           .write(updates);
+
+      final payload = <String, dynamic>{
+        'state': newState,
+      };
+      if (newState == 'paused') {
+        payload['paused_at'] = now.toIso8601String();
+      } else if (newState == 'stopped') {
+        payload['stopped_at'] = now.toIso8601String();
+      } else if (newState == 'completed') {
+        payload['completed_at'] = now.toIso8601String();
+      }
+
       await _queueSync(
         entityType: 'followup_sequence',
         entityId: sequenceId,
         mutationType: 'update',
         baseVersion: null,
-        payload: {'state': newState},
+        payload: payload,
       );
     });
   }

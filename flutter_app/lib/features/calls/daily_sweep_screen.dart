@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../app/router/app_router.dart';
-import '../../core/constants/app_tokens.dart';
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
-import '../auth/providers/auth_provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../features/auth/providers/auth_provider.dart';
+import '../../shared/widgets/glass_card.dart';
 
 class DailySweepScreen extends ConsumerStatefulWidget {
   const DailySweepScreen({
@@ -27,63 +29,45 @@ class _DailySweepScreenState extends ConsumerState<DailySweepScreen> {
 
   bool get _isIOS {
     final forced = widget.forcedPlatform;
-    if (forced == 'ios') {
-      return true;
-    }
-    if (forced == 'android') {
-      return false;
-    }
+    if (forced == 'ios') return true;
+    if (forced == 'android') return false;
     return Theme.of(context).platform == TargetPlatform.iOS;
   }
 
   Future<void> _saveAsLead(LocalCallLog call) async {
-    if (_updatingCallId != null) {
-      return;
-    }
+    if (_updatingCallId != null) return;
 
     setState(() => _updatingCallId = call.id);
     try {
       await ref
           .read(callLogsDaoProvider)
           .updateDisposition(call.id, 'saved_as_lead');
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       final phone = Uri.encodeQueryComponent(call.phoneE164);
       context.push('${AppRoutes.leadCapture}?phone=$phone');
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not save call as lead: $error')),
       );
     } finally {
-      if (mounted) {
-        setState(() => _updatingCallId = null);
-      }
+      if (mounted) setState(() => _updatingCallId = null);
     }
   }
 
   Future<void> _skip(LocalCallLog call) async {
-    if (_updatingCallId != null) {
-      return;
-    }
+    if (_updatingCallId != null) return;
 
     setState(() => _updatingCallId = call.id);
     try {
       await ref.read(callLogsDaoProvider).updateDisposition(call.id, 'skipped');
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not skip call: $error')),
       );
     } finally {
-      if (mounted) {
-        setState(() => _updatingCallId = null);
-      }
+      if (mounted) setState(() => _updatingCallId = null);
     }
   }
 
@@ -105,6 +89,7 @@ class _DailySweepScreenState extends ConsumerState<DailySweepScreen> {
     final unknownCallsAsync = ref.watch(unknownCallsProvider(orgId));
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: unknownCallsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -115,83 +100,56 @@ class _DailySweepScreenState extends ConsumerState<DailySweepScreen> {
             _initialCallCount ??= unknownCalls.length;
 
             return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               children: [
                 Row(
                   children: [
                     IconButton(
                       onPressed: () => context.go(AppRoutes.leads),
-                      icon: const Icon(Icons.chevron_left),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Leads',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      icon: const Icon(
+                        Icons.chevron_left,
+                        size: 24,
+                        color: AppColors.foreground,
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
                 Text(
                   "Today's Calls — ${DateFormat('MMM d, yyyy').format(DateTime.now())}",
-                  style: Theme.of(context).textTheme.headlineMedium,
+                  style: AppTextStyles.h1,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
                   '${unknownCalls.length} calls from numbers not in your leads',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
+                  style: AppTextStyles.secondary,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 if (unknownCalls.isNotEmpty)
-                  ...unknownCalls.map(
-                    (call) => Padding(
+                  for (final call in unknownCalls)
+                    Padding(
                       padding: const EdgeInsets.only(bottom: 10),
-                      child: _UnknownCallCard(
-                        call: call,
-                        showDurationMeta: !_isIOS,
-                        isUpdating: _updatingCallId == call.id,
-                        onSaveAsLead: () => _saveAsLead(call),
-                        onSkip: () => _skip(call),
-                        formatDuration: _formatDuration,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 280),
+                        switchInCurve: Curves.easeOut,
+                        switchOutCurve: Curves.easeIn,
+                        child: _UnknownCallCard(
+                          key: ValueKey(call.id),
+                          call: call,
+                          showDurationMeta: !_isIOS,
+                          isUpdating: _updatingCallId == call.id,
+                          onSaveAsLead: () => _saveAsLead(call),
+                          onSkip: () => _skip(call),
+                          formatDuration: _formatDuration,
+                        ),
                       ),
                     ),
-                  ),
                 if (unknownCalls.isEmpty && (_initialCallCount ?? 0) > 0)
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppTokens.glassBorder),
-                      color: AppTokens.glassElevated,
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 24),
                     child: Text(
                       'All caught up! ✓',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                if (unknownCalls.isEmpty && (_initialCallCount ?? 0) == 0)
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppTokens.glassBorder),
-                      color: AppTokens.glassElevated,
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          'No new calls today. You\'re all set.',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                        ),
-                        const SizedBox(height: 12),
-                        FilledButton(
-                          onPressed: () => context.go(AppRoutes.leads),
-                          child: const Text('Dismiss'),
-                        ),
-                      ],
+                      style: AppTextStyles.h3.copyWith(fontSize: 17),
                     ),
                   ),
               ],
@@ -205,6 +163,7 @@ class _DailySweepScreenState extends ConsumerState<DailySweepScreen> {
 
 class _UnknownCallCard extends StatelessWidget {
   const _UnknownCallCard({
+    super.key,
     required this.call,
     required this.showDurationMeta,
     required this.isUpdating,
@@ -224,31 +183,21 @@ class _UnknownCallCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final timeLabel = DateFormat('h:mm a').format(call.startedAt.toLocal());
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTokens.glassBorder),
-        color: AppTokens.glassElevated,
-      ),
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      borderRadius: 16,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(call.phoneE164, style: Theme.of(context).textTheme.titleLarge),
+          Text(call.phoneE164, style: AppTextStyles.h2.copyWith(fontSize: 20)),
           const SizedBox(height: 2),
-          Text(
-            timeLabel,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-          ),
+          Text(timeLabel,
+              style: AppTextStyles.secondary.copyWith(fontSize: 14)),
           if (showDurationMeta) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               formatDuration(call.durationSec),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
+              style: AppTextStyles.tiny.copyWith(fontSize: 13),
             ),
           ],
           const SizedBox(height: 12),
@@ -257,10 +206,20 @@ class _UnknownCallCard extends StatelessWidget {
               Expanded(
                 child: FilledButton(
                   onPressed: isUpdating ? null : onSaveAsLead,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(56),
+                    backgroundColor: AppColors.systemBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    textStyle: AppTextStyles.h4
+                        .copyWith(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
                   child: isUpdating
                       ? const SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: 18,
+                          height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: Colors.white,
@@ -271,9 +230,27 @@ class _UnknownCallCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: OutlinedButton(
-                  onPressed: isUpdating ? null : onSkip,
-                  child: const Text('Skip'),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 56),
+                  decoration: BoxDecoration(
+                    color: AppColors.glassElevated,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.glassBorder),
+                  ),
+                  child: TextButton(
+                    onPressed: isUpdating ? null : onSkip,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.mutedFg,
+                      minimumSize: const Size.fromHeight(56),
+                    ),
+                    child: Text(
+                      'Skip',
+                      style: AppTextStyles.h4.copyWith(
+                        fontSize: 15,
+                        color: AppColors.mutedFg,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],

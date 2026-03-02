@@ -56,6 +56,16 @@ class LeadsDao extends DatabaseAccessor<AppDatabase> with _$LeadsDaoMixin {
         .getSingleOrNull();
   }
 
+  /// Get an active lead by exact E.164 phone value.
+  Future<LocalLead?> getLeadByPhone(String orgId, String phoneE164) {
+    return (select(localLeads)
+          ..where((l) => l.organizationId.equals(orgId))
+          ..where((l) => l.phoneE164.equals(phoneE164))
+          ..where((l) => l.deletedAt.isNull())
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
   /// Watch won leads that have no linked active job (for Home screen reminder).
   Stream<List<LocalLead>> watchWonLeadsWithoutJob(String orgId) {
     // A lead is "won without job" when status=won and no active

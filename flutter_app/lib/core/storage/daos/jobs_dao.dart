@@ -145,6 +145,36 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
     });
   }
 
+  /// Update job notes and queue a sync action.
+  Future<void> updateJobNotes(
+    String jobId,
+    String? notes,
+    int currentVersion,
+  ) {
+    return transaction(() async {
+      final nextVersion = currentVersion + 1;
+      await (update(localJobs)..where((j) => j.id.equals(jobId))).write(
+        LocalJobsCompanion(
+          notes: Value(notes),
+          version: Value(nextVersion),
+          updatedAt: Value(DateTime.now()),
+          needsSync: const Value(true),
+        ),
+      );
+      await _queueSync(
+        entityType: 'job',
+        entityId: jobId,
+        mutationType: 'update',
+        baseVersion: currentVersion,
+        payload: {
+          'id': jobId,
+          'notes': notes,
+          'version': nextVersion,
+        },
+      );
+    });
+  }
+
   /// Soft-delete a job and queue a sync action.
   Future<void> softDeleteJob(String jobId, int currentVersion) {
     return transaction(() async {
@@ -219,6 +249,7 @@ class JobsDao extends DatabaseAccessor<AppDatabase> with _$JobsDaoMixin {
       if (c.leadId.present) 'lead_id': c.leadId.value,
       'client_name': c.clientName.value,
       'job_type': c.jobType.value,
+      if (c.notes.present) 'notes': c.notes.value,
       if (c.phase.present) 'phase': c.phase.value,
       if (c.healthStatus.present) 'health_status': c.healthStatus.value,
       if (c.estimatedCompletionDate.present && estimatedCompletionDate != null)

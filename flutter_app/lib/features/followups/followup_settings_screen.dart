@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../core/constants/app_tokens.dart';
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../shared/widgets/glass_card.dart';
 import '../auth/providers/auth_provider.dart';
-
-// ── Template key constants ────────────────────────────────────────────────────
 
 abstract final class FollowUpTemplateKeys {
   static const day2 = 'day_2_followup';
   static const day5 = 'day_5_followup';
   static const day10 = 'day_10_followup';
+  static const estimateQuickSend = 'estimate_quick_send';
 
   static const ordered = [day2, day5, day10];
 
@@ -23,14 +25,9 @@ abstract final class FollowUpTemplateKeys {
         'Hey {client_name}, checking in on the {job_type} estimate. Still interested? Happy to adjust if needed. — {contractor_name}',
     day10:
         'Hi {client_name}, last follow-up on the {job_type} estimate. Let me know if you\'d like to move forward. — {contractor_name}',
+    estimateQuickSend:
+        'Hi {client_name}, here\'s my estimate for your {job_type}: {amount}. Let me know if you\'d like to proceed! — {contractor_name}, {business_name}',
   };
-
-  static String dayLabel(String key) => switch (key) {
-        day2 => 'Day 2 Follow-Up',
-        day5 => 'Day 5 Follow-Up',
-        day10 => 'Day 10 Follow-Up',
-        _ => key,
-      };
 
   static int dayNumber(String key) => switch (key) {
         day2 => 2,
@@ -42,8 +39,6 @@ abstract final class FollowUpTemplateKeys {
 
 const _uuid = Uuid();
 
-// ── Screen ────────────────────────────────────────────────────────────────────
-
 class FollowupSettingsScreen extends ConsumerStatefulWidget {
   const FollowupSettingsScreen({super.key});
 
@@ -54,22 +49,19 @@ class FollowupSettingsScreen extends ConsumerStatefulWidget {
 
 class _FollowupSettingsScreenState
     extends ConsumerState<FollowupSettingsScreen> {
-  /// One controller per template key, keyed by templateKey.
   final Map<String, TextEditingController> _controllers = {};
-
-  /// The last-loaded smsBody per key — used to detect unsaved changes.
   final Map<String, String> _savedValues = {};
-
-  /// Track which keys are currently saving.
   final Set<String> _saving = {};
 
   String? _orgId;
   bool _defaultsSeeded = false;
+  bool _autoFollowup = true;
+  String _sendVia = 'sms';
+  int? _editingDay;
 
   @override
   void initState() {
     super.initState();
-    // Seed controllers with empty strings; real values arrive from the stream.
     for (final key in FollowUpTemplateKeys.ordered) {
       _controllers[key] = TextEditingController();
     }
@@ -87,10 +79,7 @@ class _FollowupSettingsScreenState
     String? templateBodyFor(String key) {
       final canonical =
           templates.where((t) => t.templateKey == key).firstOrNull;
-      if (canonical != null) {
-        return canonical.smsBody;
-      }
-      // Backward compatibility with old local keys.
+      if (canonical != null) return canonical.smsBody;
       final legacyKey = switch (key) {
         FollowUpTemplateKeys.day2 => 'followup_day_2',
         FollowUpTemplateKeys.day5 => 'followup_day_5',
@@ -105,9 +94,7 @@ class _FollowupSettingsScreenState
 
     for (final key in FollowUpTemplateKeys.ordered) {
       final body = templateBodyFor(key);
-      if (body == null) {
-        continue;
-      }
+      if (body == null) continue;
 
       final controller = _controllers[key]!;
       final previousSaved = _savedValues[key];
@@ -134,13 +121,20 @@ class _FollowupSettingsScreenState
         smsBody: FollowUpTemplateKeys.defaultMessages[key]!,
       );
     }
+    await dao.upsertDefaultTemplate(
+      id: _uuid.v5(
+        Namespace.url.value,
+        'crewcommand/$orgId/${FollowUpTemplateKeys.estimateQuickSend}',
+      ),
+      orgId: orgId,
+      templateKey: FollowUpTemplateKeys.estimateQuickSend,
+      smsBody: FollowUpTemplateKeys
+          .defaultMessages[FollowUpTemplateKeys.estimateQuickSend]!,
+    );
   }
 
   Future<void> _saveTemplate(
-    String templateId,
-    String key,
-    String smsBody,
-  ) async {
+      String templateId, String key, String smsBody) async {
     setState(() => _saving.add(key));
     try {
       await ref.read(templatesDaoProvider).updateTemplate(
@@ -148,20 +142,15 @@ class _FollowupSettingsScreenState
             smsBody: smsBody.trim(),
           );
       _savedValues[key] = smsBody.trim();
+    } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${FollowUpTemplateKeys.dayLabel(key)} saved.'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save: $e')),
+        SnackBar(content: Text('Could not save: $error')),
       );
     } finally {
-      if (mounted) setState(() => _saving.remove(key));
+      if (mounted) {
+        setState(() => _saving.remove(key));
+      }
     }
   }
 
@@ -171,15 +160,10 @@ class _FollowupSettingsScreenState
     _orgId = authAsync.valueOrNull?.profile?.organizationId;
 
     if (_orgId == null || _orgId!.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Follow-Up Settings')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final orgId = _orgId!;
-
-    // Seed defaults once we have an orgId.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _seedDefaults(orgId);
     });
@@ -187,101 +171,187 @@ class _FollowupSettingsScreenState
     final templatesAsync = ref.watch(activeTemplatesProvider(orgId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Follow-Up Settings')),
-      body: templatesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (templates) {
-          _populateControllers(templates);
-          return ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            children: [
-              // ── Info card ──────────────────────────────────────────
-              Card(
-                color: AppTokens.glass,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.info_outline,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.primary),
-                          const SizedBox(width: 8),
-                          Text(
-                            'How Follow-Ups Work',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelLarge
-                                ?.copyWith(
-                                    color:
-                                        Theme.of(context).colorScheme.primary),
-                          ),
-                        ],
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: templatesAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => Center(child: Text('Error: $error')),
+          data: (templates) {
+            _populateControllers(templates);
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => context.pop(),
+                      icon: const Icon(
+                        Icons.chevron_left,
+                        color: AppColors.foreground,
+                        size: 24,
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'When you mark an estimate as sent, messages are automatically scheduled at Day 2, 5, and 10. '
-                        'Use the tokens below to personalize each message.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.outline,
+                    ),
+                    const SizedBox(width: 2),
+                    Text('Follow-up', style: AppTextStyles.h1),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                GlassCard(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Auto Follow-up',
+                              style: AppTextStyles.h3.copyWith(fontSize: 17),
                             ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Send follow-ups automatically',
+                              style: AppTextStyles.secondary,
+                            ),
+                          ],
+                        ),
+                      ),
+                      _IosToggle(
+                        value: _autoFollowup,
+                        onChanged: (value) {
+                          setState(() => _autoFollowup = value);
+                        },
                       ),
                     ],
                   ),
                 ),
-              ),
-
-              const SizedBox(height: 8),
-
-              // ── Token chips ────────────────────────────────────────
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Wrap(
-                  spacing: 8,
-                  children: [
-                    _TokenChip(label: '{client_name}'),
-                    _TokenChip(label: '{job_type}'),
-                    _TokenChip(label: '{contractor_name}'),
-                  ],
+                const SizedBox(height: 16),
+                Text('SEND VIA', style: AppTextStyles.sectionLabel),
+                const SizedBox(height: 8),
+                _MethodSegmented(
+                  value: _sendVia,
+                  onChanged: (value) => setState(() => _sendVia = value),
                 ),
-              ),
-
-              const SizedBox(height: 8),
-
-              // ── Template cards ─────────────────────────────────────
-              for (final key in FollowUpTemplateKeys.ordered) ...[
-                _TemplateCard(
-                  templateKey: key,
-                  template:
-                      templates.where((t) => t.templateKey == key).firstOrNull,
-                  controller: _controllers[key]!,
-                  savedValue: _savedValues[key] ?? '',
-                  isSaving: _saving.contains(key),
-                  onSave: (templateId, body) =>
-                      _saveTemplate(templateId, key, body),
+                const SizedBox(height: 16),
+                Text('TEMPLATES', style: AppTextStyles.sectionLabel),
+                const SizedBox(height: 8),
+                for (final key in FollowUpTemplateKeys.ordered) ...[
+                  _TemplateCard(
+                    templateKey: key,
+                    template: templates
+                        .where((t) => t.templateKey == key)
+                        .firstOrNull,
+                    controller: _controllers[key]!,
+                    savedValue: _savedValues[key] ?? '',
+                    isSaving: _saving.contains(key),
+                    isEditing:
+                        _editingDay == FollowUpTemplateKeys.dayNumber(key),
+                    onToggleEdit: () {
+                      final day = FollowUpTemplateKeys.dayNumber(key);
+                      setState(
+                          () => _editingDay = _editingDay == day ? null : day);
+                    },
+                    onSave: (templateId, body) =>
+                        _saveTemplate(templateId, key, body),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                const SizedBox(height: 6),
+                GlassCard(
+                  child: RichText(
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'Note: ',
+                          style: AppTextStyles.tiny.copyWith(
+                            fontSize: 13,
+                            color: AppColors.systemBlue,
+                          ),
+                        ),
+                        TextSpan(
+                          text: 'Messages sent 9 AM – 6 PM only',
+                          style: AppTextStyles.tiny.copyWith(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 12),
               ],
-            ],
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
 }
 
-// ── Template card ─────────────────────────────────────────────────────────────
+class _MethodSegmented extends StatelessWidget {
+  const _MethodSegmented({
+    required this.value,
+    required this.onChanged,
+  });
 
-class _TemplateCard extends StatefulWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const methods = [('sms', 'SMS'), ('email', 'Email'), ('both', 'Both')];
+
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.glassElevated,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          for (final method in methods)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => onChanged(method.$1),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: value == method.$1
+                        ? AppColors.glassProminent
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    method.$2,
+                    style: AppTextStyles.label.copyWith(
+                      letterSpacing: 0,
+                      fontSize: 13,
+                      color: value == method.$1
+                          ? AppColors.foreground
+                          : AppColors.mutedFg,
+                      fontWeight: value == method.$1
+                          ? FontWeight.w600
+                          : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TemplateCard extends StatelessWidget {
   const _TemplateCard({
     required this.templateKey,
     required this.template,
     required this.controller,
     required this.savedValue,
     required this.isSaving,
+    required this.isEditing,
+    required this.onToggleEdit,
     required this.onSave,
   });
 
@@ -290,132 +360,151 @@ class _TemplateCard extends StatefulWidget {
   final TextEditingController controller;
   final String savedValue;
   final bool isSaving;
+  final bool isEditing;
+  final VoidCallback onToggleEdit;
   final void Function(String templateId, String body) onSave;
 
   @override
-  State<_TemplateCard> createState() => _TemplateCardState();
-}
-
-class _TemplateCardState extends State<_TemplateCard> {
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_onTextChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onTextChanged);
-    super.dispose();
-  }
-
-  void _onTextChanged() => setState(() {});
-
-  bool get _hasUnsavedChanges =>
-      widget.template != null &&
-      widget.controller.text.trim() != widget.savedValue.trim() &&
-      widget.controller.text.trim().isNotEmpty;
-
-  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final day = FollowUpTemplateKeys.dayNumber(widget.templateKey);
-    final label = FollowUpTemplateKeys.dayLabel(widget.templateKey);
-    final template = widget.template;
+    final day = FollowUpTemplateKeys.dayNumber(templateKey);
+    final hasUnsaved =
+        template != null && controller.text.trim() != savedValue.trim();
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: theme.colorScheme.primaryContainer,
-                  ),
-                  child: Center(
-                    child: Text(
-                      'D$day',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(label, style: theme.textTheme.titleSmall),
-                const Spacer(),
-                Icon(Icons.message_outlined,
-                    size: 18, color: theme.colorScheme.outline),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            if (template == null)
-              const Center(child: CircularProgressIndicator(strokeWidth: 2))
-            else ...[
-              TextField(
-                controller: widget.controller,
-                maxLines: 4,
-                textInputAction: TextInputAction.newline,
-                decoration: InputDecoration(
-                  border: const OutlineInputBorder(),
-                  hintText: 'Enter your Day $day message...',
-                  alignLabelWithHint: true,
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Day $day',
+                style: AppTextStyles.h4.copyWith(
+                  fontSize: 15,
+                  color: AppColors.systemBlue,
                 ),
               ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: widget.isSaving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : FilledButton(
-                        onPressed: _hasUnsavedChanges
-                            ? () => widget.onSave(
-                                  template.id,
-                                  widget.controller.text,
-                                )
-                            : null,
-                        child: const Text('Save'),
-                      ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onToggleEdit,
+                icon: const Icon(Icons.edit_outlined, size: 14),
+                label: Text(
+                  'Edit',
+                  style: AppTextStyles.tiny.copyWith(
+                    fontSize: 13,
+                    color: AppColors.systemBlue,
+                  ),
+                ),
               ),
             ],
-          ],
-        ),
+          ),
+          if (template == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else if (isEditing) ...[
+            GlassCard(
+              borderRadius: 12,
+              color: AppColors.glassBase,
+              child: Focus(
+                onFocusChange: (focused) {
+                  if (!focused && hasUnsaved) {
+                    onSave(template!.id, controller.text);
+                  }
+                },
+                child: TextField(
+                  controller: controller,
+                  maxLines: 4,
+                  style: AppTextStyles.secondary.copyWith(
+                    fontSize: 15,
+                    color: AppColors.foreground.withValues(alpha: 0.8),
+                  ),
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    hintText: 'Template text',
+                    hintStyle: AppTextStyles.secondary,
+                    filled: false,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : TextButton(
+                      onPressed: hasUnsaved
+                          ? () => onSave(template!.id, controller.text)
+                          : null,
+                      child: Text(
+                        'Save',
+                        style: AppTextStyles.tiny.copyWith(
+                          fontSize: 13,
+                          color: AppColors.systemBlue,
+                        ),
+                      ),
+                    ),
+            ),
+          ] else
+            Text(
+              controller.text,
+              style: AppTextStyles.secondary.copyWith(
+                fontSize: 15,
+                color: AppColors.foreground.withValues(alpha: 0.8),
+                height: 1.5,
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
-// ── Token chip ────────────────────────────────────────────────────────────────
+class _IosToggle extends StatelessWidget {
+  const _IosToggle({
+    required this.value,
+    required this.onChanged,
+  });
 
-class _TokenChip extends StatelessWidget {
-  const _TokenChip({required this.label});
-  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Chip(
-      label: Text(label,
-          style: Theme.of(context)
-              .textTheme
-              .labelSmall
-              ?.copyWith(fontFamily: 'monospace')),
-      backgroundColor: AppTokens.glassElevated,
-      side: const BorderSide(color: AppTokens.glassBorder),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        width: 51,
+        height: 31,
+        decoration: BoxDecoration(
+          color: value ? AppColors.systemGreen : const Color(0x52787880),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Stack(
+          children: [
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+              left: value ? 22 : 2,
+              top: 2,
+              child: Container(
+                width: 27,
+                height: 27,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

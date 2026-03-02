@@ -1,28 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/timezone.dart' as tz;
 
-/// Manages local push notifications for follow-up reminders.
-///
-/// This is a singleton service because [FlutterLocalNotificationsPlugin]
-/// has imperative initialization that must run once at app start via [initialize].
-///
-/// Usage:
-/// ```dart
-/// // In main():
-/// await NotificationService.instance.initialize();
-///
-/// // When estimate is sent:
-/// await NotificationService.instance.scheduleFollowUpNotifications(
-///   leadId: lead.id,
-///   clientName: lead.clientName,
-///   estimateSentAt: DateTime.now(),
-/// );
-///
-/// // When sequence is paused or stopped:
-/// await NotificationService.instance.cancelFollowUpNotifications(leadId: lead.id);
-/// ```
 abstract class FollowupNotificationScheduler {
   Future<void> scheduleFollowUpNotifications({
     required String leadId,
@@ -39,18 +21,24 @@ class NotificationService implements FollowupNotificationScheduler {
   static final instance = NotificationService._();
 
   final _plugin = FlutterLocalNotificationsPlugin();
+  final _tapPayloadController = StreamController<String>.broadcast();
 
-  static const _channelId = 'followup_reminders';
-  static const _channelName = 'Follow-Up Reminders';
-  static const _channelDescription =
+  Stream<String> get tapPayloadStream => _tapPayloadController.stream;
+
+  static const _followupChannelId = 'followup_reminders';
+  static const _followupChannelName = 'Follow-Up Reminders';
+  static const _followupChannelDescription =
       'Reminds you to follow up with leads on Day 2, 5, and 10 after sending an estimate.';
 
+  static const _callChannelId = 'call_detection';
+  static const _callChannelName = 'Call Detection';
+  static const _callChannelDescription =
+      'Alerts for unknown callers and daily call review reminders.';
+
+  static const _dailySweepNotificationId = 909901;
   static const _followUpDays = [2, 5, 10];
   bool _isInitialized = false;
 
-  // ── Lifecycle ────────────────────────────────────────────────────
-
-  /// Initialize the notification plugin. Call once in [main] before [runApp].
   Future<void> initialize() async {
     if (_isInitialized) {
       return;
@@ -63,30 +51,44 @@ class NotificationService implements FollowupNotificationScheduler {
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
+
     const initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
     );
 
-    await _plugin.initialize(initSettings);
+    await _plugin.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (response) {
+        final payload = response.payload;
+        if (payload != null && payload.isNotEmpty) {
+          _tapPayloadController.add(payload);
+        }
+      },
+    );
     await _configureLocalTimezone();
 
-    // Create the Android notification channel.
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        _channelId,
-        _channelName,
-        description: _channelDescription,
+        _followupChannelId,
+        _followupChannelName,
+        description: _followupChannelDescription,
+        importance: Importance.high,
+      ),
+    );
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _callChannelId,
+        _callChannelName,
+        description: _callChannelDescription,
         importance: Importance.high,
       ),
     );
 
     await requestPermissions();
     _isInitialized = true;
-
-    debugPrint('NotificationService: initialized');
   }
 
   Future<bool> requestPermissions() async {
@@ -115,12 +117,6 @@ class NotificationService implements FollowupNotificationScheduler {
     return iosGranted && macosGranted && androidGranted;
   }
 
-  // ── Scheduling ───────────────────────────────────────────────────
-
-  /// Schedule Day 2, 5, and 10 follow-up notifications at 9 AM local time.
-  ///
-  /// Cancels any previously scheduled notifications for this lead before
-  /// scheduling new ones, so re-scheduling is always safe.
   @override
   Future<void> scheduleFollowUpNotifications({
     required String leadId,
@@ -133,23 +129,16 @@ class NotificationService implements FollowupNotificationScheduler {
 
     final hasPermission = await requestPermissions();
     if (!hasPermission) {
-      debugPrint(
-        'NotificationService: permissions denied; skipping scheduling for $leadId',
-      );
       return;
     }
 
-    // Cancel existing to avoid duplicate notifications on re-schedule.
     await cancelFollowUpNotifications(leadId: leadId);
 
     for (final day in _followUpDays) {
       final scheduledDate = estimateSentAt.add(Duration(days: day));
       final fireAt = _atNineAm(scheduledDate);
 
-      // Skip dates already in the past.
       if (fireAt.isBefore(DateTime.now())) {
-        debugPrint(
-            'NotificationService: skipping day $day for $leadId (past date $fireAt)');
         continue;
       }
 
@@ -162,9 +151,9 @@ class NotificationService implements FollowupNotificationScheduler {
         tz.TZDateTime.from(fireAt, tz.local),
         const NotificationDetails(
           android: AndroidNotificationDetails(
-            _channelId,
-            _channelName,
-            channelDescription: _channelDescription,
+            _followupChannelId,
+            _followupChannelName,
+            channelDescription: _followupChannelDescription,
             importance: Importance.high,
             priority: Priority.high,
             icon: '@mipmap/ic_launcher',
@@ -176,44 +165,101 @@ class NotificationService implements FollowupNotificationScheduler {
           ),
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        payload: 'lead:$leadId',
+        payload: 'route:/leads/$leadId',
       );
-
-      debugPrint(
-          'NotificationService: scheduled day $day for $leadId at $fireAt');
     }
   }
 
-  /// Cancel all scheduled follow-up notifications for a specific lead.
   @override
   Future<void> cancelFollowUpNotifications({required String leadId}) async {
     for (final day in _followUpDays) {
       await _plugin.cancel(_notificationId(leadId, day));
     }
-    debugPrint('NotificationService: cancelled all notifications for $leadId');
   }
 
-  /// Returns the list of currently pending notification requests.
-  ///
-  /// Useful for debugging — call this to verify notifications were scheduled.
+  Future<void> showCallDetectedNotification({
+    required String phoneNumber,
+    required DateTime callTime,
+  }) async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    final payload =
+        'route:/lead-capture?phone=${Uri.encodeQueryComponent(phoneNumber)}';
+    await _plugin.show(
+      callTime.millisecondsSinceEpoch % 1000000,
+      'Unknown call detected',
+      '$phoneNumber — Save as lead?',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _callChannelId,
+          _callChannelName,
+          channelDescription: _callChannelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: payload,
+    );
+  }
+
+  Future<void> scheduleDailySweepReminder() async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    await _plugin.zonedSchedule(
+      _dailySweepNotificationId,
+      'Review today\'s calls',
+      'Open daily sweep to save unknown callers as leads.',
+      _nextSixPm(),
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _callChannelId,
+          _callChannelName,
+          channelDescription: _callChannelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: 'route:/daily-sweep-review',
+      matchDateTimeComponents: DateTimeComponents.time,
+    );
+  }
+
   Future<List<PendingNotificationRequest>> pendingNotifications() {
     return _plugin.pendingNotificationRequests();
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────
-
-  /// Derives a deterministic integer notification ID from [leadId] and [day].
-  ///
-  /// Uses a stable hash so that re-scheduling (cancel + reschedule) always
-  /// targets the same slot and never leaks orphaned IDs.
   int _notificationId(String leadId, int day) {
-    // Modulo 100000 keeps the value in the safe int range for Android.
     return (leadId.hashCode.abs() % 100000) * 100 + day;
   }
 
-  /// Returns a [DateTime] representing 9:00 AM on the same calendar day as [date].
   DateTime _atNineAm(DateTime date) {
     return DateTime(date.year, date.month, date.day, 9, 0, 0);
+  }
+
+  tz.TZDateTime _nextSixPm() {
+    final now = tz.TZDateTime.now(tz.local);
+    var target = tz.TZDateTime(tz.local, now.year, now.month, now.day, 18);
+    if (target.isBefore(now)) {
+      target = target.add(const Duration(days: 1));
+    }
+    return target;
   }
 
   Future<void> _configureLocalTimezone() async {

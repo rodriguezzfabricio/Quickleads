@@ -1,37 +1,30 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../../shared/widgets/glass_card.dart';
 
 const _uuid = Uuid();
 
-// ── Job-type presets ──────────────────────────────────────────────────────────
-
-const _kJobTypes = [
-  'Kitchen Remodel',
-  'Bathroom Remodel',
-  'Roofing',
-  'Flooring',
+const _jobTypes = [
+  'Deck',
+  'Kitchen',
+  'Bathroom',
+  'Roof',
+  'Fence',
+  'Basement',
+  'Addition',
   'Painting',
-  'HVAC',
-  'Electrical',
-  'Plumbing',
-  'Landscaping',
-  'Siding',
-  'Windows & Doors',
-  'Deck / Patio',
-  'Garage',
-  'Drywall',
+  'Concrete',
   'Other',
 ];
-
-// ── LeadCaptureScreen ─────────────────────────────────────────────────────────
 
 class LeadCaptureScreen extends ConsumerStatefulWidget {
   const LeadCaptureScreen({
@@ -46,24 +39,13 @@ class LeadCaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
-  final _formKey = GlobalKey<FormState>();
-
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
+  final _quickTextCtrl = TextEditingController();
+  final _otherJobCtrl = TextEditingController();
 
-  String? _selectedJobType;
+  String _selectedJobType = '';
   bool _saving = false;
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
-    _emailCtrl.dispose();
-    _notesCtrl.dispose();
-    super.dispose();
-  }
 
   @override
   void initState() {
@@ -74,8 +56,36 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _quickTextCtrl.dispose();
+    _otherJobCtrl.dispose();
+    super.dispose();
+  }
+
+  String get _resolvedJobType {
+    if (_selectedJobType == 'Other') {
+      return _otherJobCtrl.text.trim();
+    }
+    return _selectedJobType;
+  }
+
+  bool get _hasStructuredInput {
+    return _nameCtrl.text.trim().isNotEmpty &&
+        _phoneCtrl.text.trim().isNotEmpty &&
+        _resolvedJobType.isNotEmpty;
+  }
+
+  bool get _hasQuickText {
+    return _quickTextCtrl.text.trim().isNotEmpty;
+  }
+
+  bool get _canSave => (_hasStructuredInput || _hasQuickText) && !_saving;
+
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_canSave) return;
 
     final authState = ref.read(authProvider).valueOrNull;
     final orgId = authState?.profile?.organizationId ?? '';
@@ -90,195 +100,257 @@ class _LeadCaptureScreenState extends ConsumerState<LeadCaptureScreen> {
 
     setState(() => _saving = true);
 
+    final name = _hasStructuredInput ? _nameCtrl.text.trim() : 'Quick Lead';
+    final phone = _hasStructuredInput ? _phoneCtrl.text.trim() : '';
+    final jobType = _hasStructuredInput ? _resolvedJobType : 'Other';
+    final notes = _hasQuickText ? _quickTextCtrl.text.trim() : null;
+
     final companion = LocalLeadsCompanion.insert(
       id: _uuid.v4(),
       organizationId: orgId,
       createdByProfileId:
           profileId != null ? Value(profileId) : const Value.absent(),
-      clientName: _nameCtrl.text.trim(),
-      jobType: _selectedJobType!,
-      phoneE164: _phoneCtrl.text.trim().isNotEmpty
-          ? Value(_phoneCtrl.text.trim())
-          : const Value.absent(),
-      email: _emailCtrl.text.trim().isNotEmpty
-          ? Value(_emailCtrl.text.trim())
-          : const Value.absent(),
-      notes: _notesCtrl.text.trim().isNotEmpty
-          ? Value(_notesCtrl.text.trim())
-          : const Value.absent(),
+      clientName: name,
+      phoneE164: phone.isNotEmpty ? Value(phone) : const Value.absent(),
+      jobType: jobType,
+      notes: notes != null ? Value(notes) : const Value.absent(),
     );
 
     await ref.read(leadsDaoProvider).createLead(companion);
 
-    if (mounted) {
-      context.pop();
-    }
+    if (!mounted) return;
+    context.go('/leads');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('New Lead'),
-        actions: [
-          TextButton.icon(
-            onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check),
-            label: const Text('Save'),
-          ),
-        ],
-      ),
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            children: [
-              // ── Section: Contact ──────────────────────────────────────
-              const _SectionLabel(
-                label: 'Contact Info',
-                icon: Icons.person_outline,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _nameCtrl,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Client Name *',
-                  hintText: 'e.g. John Smith',
-                  prefixIcon: Icon(Icons.badge_outlined),
-                  border: OutlineInputBorder(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  onPressed: () => context.pop(),
+                  icon: const Icon(
+                    Icons.chevron_left,
+                    color: AppColors.foreground,
+                    size: 24,
+                  ),
                 ),
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Client name is required'
-                    : null,
+                const SizedBox(width: 2),
+                Text('New Lead', style: AppTextStyles.h1),
+              ],
+            ),
+            const SizedBox(height: 18),
+            GlassCard(
+              padding: const EdgeInsets.all(16),
+              child: TextField(
+                controller: _nameCtrl,
+                onChanged: (_) => setState(() {}),
+                style: AppTextStyles.body,
+                decoration: InputDecoration(
+                  hintText: 'Name',
+                  hintStyle:
+                      AppTextStyles.body.copyWith(color: AppColors.mutedFg),
+                  border: InputBorder.none,
+                  isCollapsed: true,
+                  filled: false,
+                ),
               ),
-              const SizedBox(height: 16),
-              TextFormField(
+            ),
+            const SizedBox(height: 10),
+            GlassCard(
+              padding: const EdgeInsets.all(16),
+              child: TextField(
                 controller: _phoneCtrl,
                 keyboardType: TextInputType.phone,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s()]'))
-                ],
-                decoration: const InputDecoration(
-                  labelText: 'Phone Number',
-                  hintText: '+1 555-000-0000',
-                  prefixIcon: Icon(Icons.phone_outlined),
-                  border: OutlineInputBorder(),
+                onChanged: (_) => setState(() {}),
+                style: AppTextStyles.body,
+                decoration: InputDecoration(
+                  hintText: 'Phone',
+                  hintStyle:
+                      AppTextStyles.body.copyWith(color: AppColors.mutedFg),
+                  border: InputBorder.none,
+                  isCollapsed: true,
+                  filled: false,
                 ),
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _emailCtrl,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email (optional)',
-                  hintText: 'client@email.com',
-                  prefixIcon: Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return null;
-                  final valid =
-                      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim());
-                  return valid ? null : 'Enter a valid email address';
-                },
-              ),
-
-              const SizedBox(height: 28),
-              // ── Section: Job ──────────────────────────────────────────
-              const _SectionLabel(
-                label: 'Job Details',
-                icon: Icons.construction_outlined,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _selectedJobType,
-                decoration: const InputDecoration(
-                  labelText: 'Job Type *',
-                  prefixIcon: Icon(Icons.build_outlined),
-                  border: OutlineInputBorder(),
-                ),
-                hint: const Text('Select job type'),
-                items: _kJobTypes
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                    .toList(),
-                onChanged: (v) => setState(() => _selectedJobType = v),
-                validator: (v) => (v == null || v.isEmpty)
-                    ? 'Please select a job type'
-                    : null,
-              ),
-
-              const SizedBox(height: 28),
-              // ── Section: Notes ────────────────────────────────────────
-              const _SectionLabel(
-                label: 'Notes',
-                icon: Icons.notes_outlined,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _notesCtrl,
-                maxLines: 5,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  labelText: 'Notes (optional)',
-                  hintText: 'What did the client say? Any key details…',
-                  alignLabelWithHint: true,
-                  border: OutlineInputBorder(),
+            ),
+            const SizedBox(height: 18),
+            Text('WHAT THEY NEED', style: AppTextStyles.sectionLabel),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final jobType in _jobTypes)
+                  _JobTypeChip(
+                    label: jobType,
+                    active: _selectedJobType == jobType,
+                    onTap: () {
+                      setState(() => _selectedJobType = jobType);
+                    },
+                  ),
+              ],
+            ),
+            if (_selectedJobType == 'Other') ...[
+              const SizedBox(height: 10),
+              GlassCard(
+                padding: const EdgeInsets.all(16),
+                child: TextField(
+                  controller: _otherJobCtrl,
+                  onChanged: (_) => setState(() {}),
+                  style: AppTextStyles.body,
+                  decoration: InputDecoration(
+                    hintText: 'Describe...',
+                    hintStyle:
+                        AppTextStyles.body.copyWith(color: AppColors.mutedFg),
+                    border: InputBorder.none,
+                    isCollapsed: true,
+                    filled: false,
+                  ),
                 ),
               ),
-
-              const SizedBox(height: 32),
-              FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
+            ],
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: AppColors.glassBorder,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text('OR',
+                    style:
+                        AppTextStyles.badge.copyWith(color: AppColors.mutedFg)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: AppColors.glassBorder,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Text('QUICK TEXT', style: AppTextStyles.sectionLabel),
+            const SizedBox(height: 8),
+            Stack(
+              children: [
+                GlassCard(
+                  child: TextField(
+                    controller: _quickTextCtrl,
+                    maxLines: 3,
+                    onChanged: (_) => setState(() {}),
+                    style: AppTextStyles.body,
+                    decoration: InputDecoration(
+                      hintText:
+                          "Or just type it: 'John 301-555-2847 deck rebuild'",
+                      hintStyle:
+                          AppTextStyles.body.copyWith(color: AppColors.mutedFg),
+                      border: InputBorder.none,
+                      filled: false,
+                    ),
+                  ),
+                ),
+                const Positioned(
+                  right: 16,
+                  bottom: 16,
+                  child: Icon(
+                    Icons.send,
+                    size: 20,
+                    color: Color(0xCC007AFF),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _canSave ? _save : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.systemBlue,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(56),
+                  disabledBackgroundColor:
+                      AppColors.systemBlue.withValues(alpha: 0.4),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  textStyle: AppTextStyles.buttonPrimary,
+                ),
+                child: _saving
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
-                    : const Icon(Icons.save_outlined),
-                label: Text(_saving ? 'Saving…' : 'Save Lead'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(52),
-                ),
+                    : const Text('Save Lead'),
               ),
-              const SizedBox(height: 16),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// ── Helper widget ─────────────────────────────────────────────────────────────
+class _JobTypeChip extends StatefulWidget {
+  const _JobTypeChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
 
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.label, required this.icon});
   final String label;
-  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  State<_JobTypeChip> createState() => _JobTypeChipState();
+}
+
+class _JobTypeChipState extends State<_JobTypeChip> {
+  double _scale = 1;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: theme.colorScheme.primary),
-        const SizedBox(width: 8),
-        Text(label,
-            style: theme.textTheme.labelLarge
-                ?.copyWith(color: theme.colorScheme.primary)),
-        const SizedBox(width: 8),
-        const Expanded(child: Divider()),
-      ],
+    return AnimatedScale(
+      scale: _scale,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _scale = 0.95),
+        onTapCancel: () => setState(() => _scale = 1),
+        onTapUp: (_) => setState(() => _scale = 1),
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color:
+                widget.active ? AppColors.systemBlue : AppColors.glassElevated,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          child: Text(
+            widget.label,
+            style: AppTextStyles.h4.copyWith(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: widget.active ? Colors.white : AppColors.foreground,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

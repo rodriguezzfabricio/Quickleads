@@ -863,6 +863,11 @@ class $LocalJobsTable extends LocalJobs
           GeneratedColumn.checkTextLength(minTextLength: 1, maxTextLength: 80),
       type: DriftSqlType.string,
       requiredDuringInsert: true);
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+      'notes', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _phaseMeta = const VerificationMeta('phase');
   @override
   late final GeneratedColumn<String> phase = GeneratedColumn<String>(
@@ -937,6 +942,7 @@ class $LocalJobsTable extends LocalJobs
         leadId,
         clientName,
         jobType,
+        notes,
         phase,
         healthStatus,
         estimatedCompletionDate,
@@ -987,6 +993,10 @@ class $LocalJobsTable extends LocalJobs
           jobType.isAcceptableOrUnknown(data['job_type']!, _jobTypeMeta));
     } else if (isInserting) {
       context.missing(_jobTypeMeta);
+    }
+    if (data.containsKey('notes')) {
+      context.handle(
+          _notesMeta, notes.isAcceptableOrUnknown(data['notes']!, _notesMeta));
     }
     if (data.containsKey('phase')) {
       context.handle(
@@ -1050,6 +1060,8 @@ class $LocalJobsTable extends LocalJobs
           .read(DriftSqlType.string, data['${effectivePrefix}client_name'])!,
       jobType: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}job_type'])!,
+      notes: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}notes']),
       phase: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}phase'])!,
       healthStatus: attachedDatabase.typeMapping
@@ -1084,6 +1096,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
   final String? leadId;
   final String clientName;
   final String jobType;
+  final String? notes;
   final String phase;
   final String healthStatus;
   final DateTime? estimatedCompletionDate;
@@ -1099,6 +1112,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
       this.leadId,
       required this.clientName,
       required this.jobType,
+      this.notes,
       required this.phase,
       required this.healthStatus,
       this.estimatedCompletionDate,
@@ -1118,6 +1132,9 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
     }
     map['client_name'] = Variable<String>(clientName);
     map['job_type'] = Variable<String>(jobType);
+    if (!nullToAbsent || notes != null) {
+      map['notes'] = Variable<String>(notes);
+    }
     map['phase'] = Variable<String>(phase);
     map['health_status'] = Variable<String>(healthStatus);
     if (!nullToAbsent || estimatedCompletionDate != null) {
@@ -1145,6 +1162,8 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
           leadId == null && nullToAbsent ? const Value.absent() : Value(leadId),
       clientName: Value(clientName),
       jobType: Value(jobType),
+      notes:
+          notes == null && nullToAbsent ? const Value.absent() : Value(notes),
       phase: Value(phase),
       healthStatus: Value(healthStatus),
       estimatedCompletionDate: estimatedCompletionDate == null && nullToAbsent
@@ -1172,6 +1191,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
       leadId: serializer.fromJson<String?>(json['leadId']),
       clientName: serializer.fromJson<String>(json['clientName']),
       jobType: serializer.fromJson<String>(json['jobType']),
+      notes: serializer.fromJson<String?>(json['notes']),
       phase: serializer.fromJson<String>(json['phase']),
       healthStatus: serializer.fromJson<String>(json['healthStatus']),
       estimatedCompletionDate:
@@ -1193,6 +1213,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
       'leadId': serializer.toJson<String?>(leadId),
       'clientName': serializer.toJson<String>(clientName),
       'jobType': serializer.toJson<String>(jobType),
+      'notes': serializer.toJson<String?>(notes),
       'phase': serializer.toJson<String>(phase),
       'healthStatus': serializer.toJson<String>(healthStatus),
       'estimatedCompletionDate':
@@ -1212,6 +1233,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
           Value<String?> leadId = const Value.absent(),
           String? clientName,
           String? jobType,
+          Value<String?> notes = const Value.absent(),
           String? phase,
           String? healthStatus,
           Value<DateTime?> estimatedCompletionDate = const Value.absent(),
@@ -1227,6 +1249,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
         leadId: leadId.present ? leadId.value : this.leadId,
         clientName: clientName ?? this.clientName,
         jobType: jobType ?? this.jobType,
+        notes: notes.present ? notes.value : this.notes,
         phase: phase ?? this.phase,
         healthStatus: healthStatus ?? this.healthStatus,
         estimatedCompletionDate: estimatedCompletionDate.present
@@ -1250,6 +1273,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
       clientName:
           data.clientName.present ? data.clientName.value : this.clientName,
       jobType: data.jobType.present ? data.jobType.value : this.jobType,
+      notes: data.notes.present ? data.notes.value : this.notes,
       phase: data.phase.present ? data.phase.value : this.phase,
       healthStatus: data.healthStatus.present
           ? data.healthStatus.value
@@ -1276,6 +1300,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
           ..write('leadId: $leadId, ')
           ..write('clientName: $clientName, ')
           ..write('jobType: $jobType, ')
+          ..write('notes: $notes, ')
           ..write('phase: $phase, ')
           ..write('healthStatus: $healthStatus, ')
           ..write('estimatedCompletionDate: $estimatedCompletionDate, ')
@@ -1296,6 +1321,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
       leadId,
       clientName,
       jobType,
+      notes,
       phase,
       healthStatus,
       estimatedCompletionDate,
@@ -1314,6 +1340,7 @@ class LocalJob extends DataClass implements Insertable<LocalJob> {
           other.leadId == this.leadId &&
           other.clientName == this.clientName &&
           other.jobType == this.jobType &&
+          other.notes == this.notes &&
           other.phase == this.phase &&
           other.healthStatus == this.healthStatus &&
           other.estimatedCompletionDate == this.estimatedCompletionDate &&
@@ -1331,6 +1358,7 @@ class LocalJobsCompanion extends UpdateCompanion<LocalJob> {
   final Value<String?> leadId;
   final Value<String> clientName;
   final Value<String> jobType;
+  final Value<String?> notes;
   final Value<String> phase;
   final Value<String> healthStatus;
   final Value<DateTime?> estimatedCompletionDate;
@@ -1347,6 +1375,7 @@ class LocalJobsCompanion extends UpdateCompanion<LocalJob> {
     this.leadId = const Value.absent(),
     this.clientName = const Value.absent(),
     this.jobType = const Value.absent(),
+    this.notes = const Value.absent(),
     this.phase = const Value.absent(),
     this.healthStatus = const Value.absent(),
     this.estimatedCompletionDate = const Value.absent(),
@@ -1364,6 +1393,7 @@ class LocalJobsCompanion extends UpdateCompanion<LocalJob> {
     this.leadId = const Value.absent(),
     required String clientName,
     required String jobType,
+    this.notes = const Value.absent(),
     this.phase = const Value.absent(),
     this.healthStatus = const Value.absent(),
     this.estimatedCompletionDate = const Value.absent(),
@@ -1384,6 +1414,7 @@ class LocalJobsCompanion extends UpdateCompanion<LocalJob> {
     Expression<String>? leadId,
     Expression<String>? clientName,
     Expression<String>? jobType,
+    Expression<String>? notes,
     Expression<String>? phase,
     Expression<String>? healthStatus,
     Expression<DateTime>? estimatedCompletionDate,
@@ -1401,6 +1432,7 @@ class LocalJobsCompanion extends UpdateCompanion<LocalJob> {
       if (leadId != null) 'lead_id': leadId,
       if (clientName != null) 'client_name': clientName,
       if (jobType != null) 'job_type': jobType,
+      if (notes != null) 'notes': notes,
       if (phase != null) 'phase': phase,
       if (healthStatus != null) 'health_status': healthStatus,
       if (estimatedCompletionDate != null)
@@ -1421,6 +1453,7 @@ class LocalJobsCompanion extends UpdateCompanion<LocalJob> {
       Value<String?>? leadId,
       Value<String>? clientName,
       Value<String>? jobType,
+      Value<String?>? notes,
       Value<String>? phase,
       Value<String>? healthStatus,
       Value<DateTime?>? estimatedCompletionDate,
@@ -1437,6 +1470,7 @@ class LocalJobsCompanion extends UpdateCompanion<LocalJob> {
       leadId: leadId ?? this.leadId,
       clientName: clientName ?? this.clientName,
       jobType: jobType ?? this.jobType,
+      notes: notes ?? this.notes,
       phase: phase ?? this.phase,
       healthStatus: healthStatus ?? this.healthStatus,
       estimatedCompletionDate:
@@ -1468,6 +1502,9 @@ class LocalJobsCompanion extends UpdateCompanion<LocalJob> {
     }
     if (jobType.present) {
       map['job_type'] = Variable<String>(jobType.value);
+    }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
     }
     if (phase.present) {
       map['phase'] = Variable<String>(phase.value);
@@ -1511,6 +1548,7 @@ class LocalJobsCompanion extends UpdateCompanion<LocalJob> {
           ..write('leadId: $leadId, ')
           ..write('clientName: $clientName, ')
           ..write('jobType: $jobType, ')
+          ..write('notes: $notes, ')
           ..write('phase: $phase, ')
           ..write('healthStatus: $healthStatus, ')
           ..write('estimatedCompletionDate: $estimatedCompletionDate, ')
@@ -5739,6 +5777,1276 @@ class SyncCursorsCompanion extends UpdateCompanion<SyncCursor> {
   }
 }
 
+class $LocalJobPhotosTable extends LocalJobPhotos
+    with TableInfo<$LocalJobPhotosTable, LocalJobPhoto> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalJobPhotosTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _jobIdMeta = const VerificationMeta('jobId');
+  @override
+  late final GeneratedColumn<String> jobId = GeneratedColumn<String>(
+      'job_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _organizationIdMeta =
+      const VerificationMeta('organizationId');
+  @override
+  late final GeneratedColumn<String> organizationId = GeneratedColumn<String>(
+      'organization_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _storagePathMeta =
+      const VerificationMeta('storagePath');
+  @override
+  late final GeneratedColumn<String> storagePath = GeneratedColumn<String>(
+      'storage_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _localFilePathMeta =
+      const VerificationMeta('localFilePath');
+  @override
+  late final GeneratedColumn<String> localFilePath = GeneratedColumn<String>(
+      'local_file_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _takenAtSourceMeta =
+      const VerificationMeta('takenAtSource');
+  @override
+  late final GeneratedColumn<String> takenAtSource = GeneratedColumn<String>(
+      'taken_at_source', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _uploadedAtMeta =
+      const VerificationMeta('uploadedAt');
+  @override
+  late final GeneratedColumn<DateTime> uploadedAt = GeneratedColumn<DateTime>(
+      'uploaded_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _needsSyncMeta =
+      const VerificationMeta('needsSync');
+  @override
+  late final GeneratedColumn<bool> needsSync = GeneratedColumn<bool>(
+      'needs_sync', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("needs_sync" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _lastSyncedAtMeta =
+      const VerificationMeta('lastSyncedAt');
+  @override
+  late final GeneratedColumn<DateTime> lastSyncedAt = GeneratedColumn<DateTime>(
+      'last_synced_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        jobId,
+        organizationId,
+        storagePath,
+        localFilePath,
+        takenAtSource,
+        uploadedAt,
+        createdAt,
+        needsSync,
+        lastSyncedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_job_photos';
+  @override
+  VerificationContext validateIntegrity(Insertable<LocalJobPhoto> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('job_id')) {
+      context.handle(
+          _jobIdMeta, jobId.isAcceptableOrUnknown(data['job_id']!, _jobIdMeta));
+    } else if (isInserting) {
+      context.missing(_jobIdMeta);
+    }
+    if (data.containsKey('organization_id')) {
+      context.handle(
+          _organizationIdMeta,
+          organizationId.isAcceptableOrUnknown(
+              data['organization_id']!, _organizationIdMeta));
+    } else if (isInserting) {
+      context.missing(_organizationIdMeta);
+    }
+    if (data.containsKey('storage_path')) {
+      context.handle(
+          _storagePathMeta,
+          storagePath.isAcceptableOrUnknown(
+              data['storage_path']!, _storagePathMeta));
+    }
+    if (data.containsKey('local_file_path')) {
+      context.handle(
+          _localFilePathMeta,
+          localFilePath.isAcceptableOrUnknown(
+              data['local_file_path']!, _localFilePathMeta));
+    }
+    if (data.containsKey('taken_at_source')) {
+      context.handle(
+          _takenAtSourceMeta,
+          takenAtSource.isAcceptableOrUnknown(
+              data['taken_at_source']!, _takenAtSourceMeta));
+    }
+    if (data.containsKey('uploaded_at')) {
+      context.handle(
+          _uploadedAtMeta,
+          uploadedAt.isAcceptableOrUnknown(
+              data['uploaded_at']!, _uploadedAtMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('needs_sync')) {
+      context.handle(_needsSyncMeta,
+          needsSync.isAcceptableOrUnknown(data['needs_sync']!, _needsSyncMeta));
+    }
+    if (data.containsKey('last_synced_at')) {
+      context.handle(
+          _lastSyncedAtMeta,
+          lastSyncedAt.isAcceptableOrUnknown(
+              data['last_synced_at']!, _lastSyncedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  LocalJobPhoto map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalJobPhoto(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      jobId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}job_id'])!,
+      organizationId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}organization_id'])!,
+      storagePath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}storage_path']),
+      localFilePath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}local_file_path']),
+      takenAtSource: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}taken_at_source']),
+      uploadedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}uploaded_at']),
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      needsSync: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}needs_sync'])!,
+      lastSyncedAt: attachedDatabase.typeMapping.read(
+          DriftSqlType.dateTime, data['${effectivePrefix}last_synced_at']),
+    );
+  }
+
+  @override
+  $LocalJobPhotosTable createAlias(String alias) {
+    return $LocalJobPhotosTable(attachedDatabase, alias);
+  }
+}
+
+class LocalJobPhoto extends DataClass implements Insertable<LocalJobPhoto> {
+  final String id;
+  final String jobId;
+  final String organizationId;
+  final String? storagePath;
+  final String? localFilePath;
+  final String? takenAtSource;
+  final DateTime? uploadedAt;
+  final DateTime createdAt;
+  final bool needsSync;
+  final DateTime? lastSyncedAt;
+  const LocalJobPhoto(
+      {required this.id,
+      required this.jobId,
+      required this.organizationId,
+      this.storagePath,
+      this.localFilePath,
+      this.takenAtSource,
+      this.uploadedAt,
+      required this.createdAt,
+      required this.needsSync,
+      this.lastSyncedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['job_id'] = Variable<String>(jobId);
+    map['organization_id'] = Variable<String>(organizationId);
+    if (!nullToAbsent || storagePath != null) {
+      map['storage_path'] = Variable<String>(storagePath);
+    }
+    if (!nullToAbsent || localFilePath != null) {
+      map['local_file_path'] = Variable<String>(localFilePath);
+    }
+    if (!nullToAbsent || takenAtSource != null) {
+      map['taken_at_source'] = Variable<String>(takenAtSource);
+    }
+    if (!nullToAbsent || uploadedAt != null) {
+      map['uploaded_at'] = Variable<DateTime>(uploadedAt);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['needs_sync'] = Variable<bool>(needsSync);
+    if (!nullToAbsent || lastSyncedAt != null) {
+      map['last_synced_at'] = Variable<DateTime>(lastSyncedAt);
+    }
+    return map;
+  }
+
+  LocalJobPhotosCompanion toCompanion(bool nullToAbsent) {
+    return LocalJobPhotosCompanion(
+      id: Value(id),
+      jobId: Value(jobId),
+      organizationId: Value(organizationId),
+      storagePath: storagePath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(storagePath),
+      localFilePath: localFilePath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localFilePath),
+      takenAtSource: takenAtSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(takenAtSource),
+      uploadedAt: uploadedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadedAt),
+      createdAt: Value(createdAt),
+      needsSync: Value(needsSync),
+      lastSyncedAt: lastSyncedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastSyncedAt),
+    );
+  }
+
+  factory LocalJobPhoto.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalJobPhoto(
+      id: serializer.fromJson<String>(json['id']),
+      jobId: serializer.fromJson<String>(json['jobId']),
+      organizationId: serializer.fromJson<String>(json['organizationId']),
+      storagePath: serializer.fromJson<String?>(json['storagePath']),
+      localFilePath: serializer.fromJson<String?>(json['localFilePath']),
+      takenAtSource: serializer.fromJson<String?>(json['takenAtSource']),
+      uploadedAt: serializer.fromJson<DateTime?>(json['uploadedAt']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      needsSync: serializer.fromJson<bool>(json['needsSync']),
+      lastSyncedAt: serializer.fromJson<DateTime?>(json['lastSyncedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'jobId': serializer.toJson<String>(jobId),
+      'organizationId': serializer.toJson<String>(organizationId),
+      'storagePath': serializer.toJson<String?>(storagePath),
+      'localFilePath': serializer.toJson<String?>(localFilePath),
+      'takenAtSource': serializer.toJson<String?>(takenAtSource),
+      'uploadedAt': serializer.toJson<DateTime?>(uploadedAt),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'needsSync': serializer.toJson<bool>(needsSync),
+      'lastSyncedAt': serializer.toJson<DateTime?>(lastSyncedAt),
+    };
+  }
+
+  LocalJobPhoto copyWith(
+          {String? id,
+          String? jobId,
+          String? organizationId,
+          Value<String?> storagePath = const Value.absent(),
+          Value<String?> localFilePath = const Value.absent(),
+          Value<String?> takenAtSource = const Value.absent(),
+          Value<DateTime?> uploadedAt = const Value.absent(),
+          DateTime? createdAt,
+          bool? needsSync,
+          Value<DateTime?> lastSyncedAt = const Value.absent()}) =>
+      LocalJobPhoto(
+        id: id ?? this.id,
+        jobId: jobId ?? this.jobId,
+        organizationId: organizationId ?? this.organizationId,
+        storagePath: storagePath.present ? storagePath.value : this.storagePath,
+        localFilePath:
+            localFilePath.present ? localFilePath.value : this.localFilePath,
+        takenAtSource:
+            takenAtSource.present ? takenAtSource.value : this.takenAtSource,
+        uploadedAt: uploadedAt.present ? uploadedAt.value : this.uploadedAt,
+        createdAt: createdAt ?? this.createdAt,
+        needsSync: needsSync ?? this.needsSync,
+        lastSyncedAt:
+            lastSyncedAt.present ? lastSyncedAt.value : this.lastSyncedAt,
+      );
+  LocalJobPhoto copyWithCompanion(LocalJobPhotosCompanion data) {
+    return LocalJobPhoto(
+      id: data.id.present ? data.id.value : this.id,
+      jobId: data.jobId.present ? data.jobId.value : this.jobId,
+      organizationId: data.organizationId.present
+          ? data.organizationId.value
+          : this.organizationId,
+      storagePath:
+          data.storagePath.present ? data.storagePath.value : this.storagePath,
+      localFilePath: data.localFilePath.present
+          ? data.localFilePath.value
+          : this.localFilePath,
+      takenAtSource: data.takenAtSource.present
+          ? data.takenAtSource.value
+          : this.takenAtSource,
+      uploadedAt:
+          data.uploadedAt.present ? data.uploadedAt.value : this.uploadedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      needsSync: data.needsSync.present ? data.needsSync.value : this.needsSync,
+      lastSyncedAt: data.lastSyncedAt.present
+          ? data.lastSyncedAt.value
+          : this.lastSyncedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalJobPhoto(')
+          ..write('id: $id, ')
+          ..write('jobId: $jobId, ')
+          ..write('organizationId: $organizationId, ')
+          ..write('storagePath: $storagePath, ')
+          ..write('localFilePath: $localFilePath, ')
+          ..write('takenAtSource: $takenAtSource, ')
+          ..write('uploadedAt: $uploadedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('needsSync: $needsSync, ')
+          ..write('lastSyncedAt: $lastSyncedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      jobId,
+      organizationId,
+      storagePath,
+      localFilePath,
+      takenAtSource,
+      uploadedAt,
+      createdAt,
+      needsSync,
+      lastSyncedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalJobPhoto &&
+          other.id == this.id &&
+          other.jobId == this.jobId &&
+          other.organizationId == this.organizationId &&
+          other.storagePath == this.storagePath &&
+          other.localFilePath == this.localFilePath &&
+          other.takenAtSource == this.takenAtSource &&
+          other.uploadedAt == this.uploadedAt &&
+          other.createdAt == this.createdAt &&
+          other.needsSync == this.needsSync &&
+          other.lastSyncedAt == this.lastSyncedAt);
+}
+
+class LocalJobPhotosCompanion extends UpdateCompanion<LocalJobPhoto> {
+  final Value<String> id;
+  final Value<String> jobId;
+  final Value<String> organizationId;
+  final Value<String?> storagePath;
+  final Value<String?> localFilePath;
+  final Value<String?> takenAtSource;
+  final Value<DateTime?> uploadedAt;
+  final Value<DateTime> createdAt;
+  final Value<bool> needsSync;
+  final Value<DateTime?> lastSyncedAt;
+  final Value<int> rowid;
+  const LocalJobPhotosCompanion({
+    this.id = const Value.absent(),
+    this.jobId = const Value.absent(),
+    this.organizationId = const Value.absent(),
+    this.storagePath = const Value.absent(),
+    this.localFilePath = const Value.absent(),
+    this.takenAtSource = const Value.absent(),
+    this.uploadedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.needsSync = const Value.absent(),
+    this.lastSyncedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalJobPhotosCompanion.insert({
+    required String id,
+    required String jobId,
+    required String organizationId,
+    this.storagePath = const Value.absent(),
+    this.localFilePath = const Value.absent(),
+    this.takenAtSource = const Value.absent(),
+    this.uploadedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.needsSync = const Value.absent(),
+    this.lastSyncedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        jobId = Value(jobId),
+        organizationId = Value(organizationId);
+  static Insertable<LocalJobPhoto> custom({
+    Expression<String>? id,
+    Expression<String>? jobId,
+    Expression<String>? organizationId,
+    Expression<String>? storagePath,
+    Expression<String>? localFilePath,
+    Expression<String>? takenAtSource,
+    Expression<DateTime>? uploadedAt,
+    Expression<DateTime>? createdAt,
+    Expression<bool>? needsSync,
+    Expression<DateTime>? lastSyncedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (jobId != null) 'job_id': jobId,
+      if (organizationId != null) 'organization_id': organizationId,
+      if (storagePath != null) 'storage_path': storagePath,
+      if (localFilePath != null) 'local_file_path': localFilePath,
+      if (takenAtSource != null) 'taken_at_source': takenAtSource,
+      if (uploadedAt != null) 'uploaded_at': uploadedAt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (needsSync != null) 'needs_sync': needsSync,
+      if (lastSyncedAt != null) 'last_synced_at': lastSyncedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalJobPhotosCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? jobId,
+      Value<String>? organizationId,
+      Value<String?>? storagePath,
+      Value<String?>? localFilePath,
+      Value<String?>? takenAtSource,
+      Value<DateTime?>? uploadedAt,
+      Value<DateTime>? createdAt,
+      Value<bool>? needsSync,
+      Value<DateTime?>? lastSyncedAt,
+      Value<int>? rowid}) {
+    return LocalJobPhotosCompanion(
+      id: id ?? this.id,
+      jobId: jobId ?? this.jobId,
+      organizationId: organizationId ?? this.organizationId,
+      storagePath: storagePath ?? this.storagePath,
+      localFilePath: localFilePath ?? this.localFilePath,
+      takenAtSource: takenAtSource ?? this.takenAtSource,
+      uploadedAt: uploadedAt ?? this.uploadedAt,
+      createdAt: createdAt ?? this.createdAt,
+      needsSync: needsSync ?? this.needsSync,
+      lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (jobId.present) {
+      map['job_id'] = Variable<String>(jobId.value);
+    }
+    if (organizationId.present) {
+      map['organization_id'] = Variable<String>(organizationId.value);
+    }
+    if (storagePath.present) {
+      map['storage_path'] = Variable<String>(storagePath.value);
+    }
+    if (localFilePath.present) {
+      map['local_file_path'] = Variable<String>(localFilePath.value);
+    }
+    if (takenAtSource.present) {
+      map['taken_at_source'] = Variable<String>(takenAtSource.value);
+    }
+    if (uploadedAt.present) {
+      map['uploaded_at'] = Variable<DateTime>(uploadedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (needsSync.present) {
+      map['needs_sync'] = Variable<bool>(needsSync.value);
+    }
+    if (lastSyncedAt.present) {
+      map['last_synced_at'] = Variable<DateTime>(lastSyncedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalJobPhotosCompanion(')
+          ..write('id: $id, ')
+          ..write('jobId: $jobId, ')
+          ..write('organizationId: $organizationId, ')
+          ..write('storagePath: $storagePath, ')
+          ..write('localFilePath: $localFilePath, ')
+          ..write('takenAtSource: $takenAtSource, ')
+          ..write('uploadedAt: $uploadedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('needsSync: $needsSync, ')
+          ..write('lastSyncedAt: $lastSyncedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $LocalClientsTable extends LocalClients
+    with TableInfo<$LocalClientsTable, LocalClient> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalClientsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _organizationIdMeta =
+      const VerificationMeta('organizationId');
+  @override
+  late final GeneratedColumn<String> organizationId = GeneratedColumn<String>(
+      'organization_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      additionalChecks:
+          GeneratedColumn.checkTextLength(minTextLength: 1, maxTextLength: 120),
+      type: DriftSqlType.string,
+      requiredDuringInsert: true);
+  static const VerificationMeta _phoneMeta = const VerificationMeta('phone');
+  @override
+  late final GeneratedColumn<String> phone = GeneratedColumn<String>(
+      'phone', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _emailMeta = const VerificationMeta('email');
+  @override
+  late final GeneratedColumn<String> email = GeneratedColumn<String>(
+      'email', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _addressMeta =
+      const VerificationMeta('address');
+  @override
+  late final GeneratedColumn<String> address = GeneratedColumn<String>(
+      'address', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+      'notes', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sourceLeadIdMeta =
+      const VerificationMeta('sourceLeadId');
+  @override
+  late final GeneratedColumn<String> sourceLeadId = GeneratedColumn<String>(
+      'source_lead_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _projectCountMeta =
+      const VerificationMeta('projectCount');
+  @override
+  late final GeneratedColumn<int> projectCount = GeneratedColumn<int>(
+      'project_count', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _versionMeta =
+      const VerificationMeta('version');
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+      'version', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(1));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+      'deleted_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _needsSyncMeta =
+      const VerificationMeta('needsSync');
+  @override
+  late final GeneratedColumn<bool> needsSync = GeneratedColumn<bool>(
+      'needs_sync', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("needs_sync" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _lastSyncedAtMeta =
+      const VerificationMeta('lastSyncedAt');
+  @override
+  late final GeneratedColumn<DateTime> lastSyncedAt = GeneratedColumn<DateTime>(
+      'last_synced_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        organizationId,
+        name,
+        phone,
+        email,
+        address,
+        notes,
+        sourceLeadId,
+        projectCount,
+        version,
+        createdAt,
+        updatedAt,
+        deletedAt,
+        needsSync,
+        lastSyncedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_clients';
+  @override
+  VerificationContext validateIntegrity(Insertable<LocalClient> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('organization_id')) {
+      context.handle(
+          _organizationIdMeta,
+          organizationId.isAcceptableOrUnknown(
+              data['organization_id']!, _organizationIdMeta));
+    } else if (isInserting) {
+      context.missing(_organizationIdMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('phone')) {
+      context.handle(
+          _phoneMeta, phone.isAcceptableOrUnknown(data['phone']!, _phoneMeta));
+    }
+    if (data.containsKey('email')) {
+      context.handle(
+          _emailMeta, email.isAcceptableOrUnknown(data['email']!, _emailMeta));
+    }
+    if (data.containsKey('address')) {
+      context.handle(_addressMeta,
+          address.isAcceptableOrUnknown(data['address']!, _addressMeta));
+    }
+    if (data.containsKey('notes')) {
+      context.handle(
+          _notesMeta, notes.isAcceptableOrUnknown(data['notes']!, _notesMeta));
+    }
+    if (data.containsKey('source_lead_id')) {
+      context.handle(
+          _sourceLeadIdMeta,
+          sourceLeadId.isAcceptableOrUnknown(
+              data['source_lead_id']!, _sourceLeadIdMeta));
+    }
+    if (data.containsKey('project_count')) {
+      context.handle(
+          _projectCountMeta,
+          projectCount.isAcceptableOrUnknown(
+              data['project_count']!, _projectCountMeta));
+    }
+    if (data.containsKey('version')) {
+      context.handle(_versionMeta,
+          version.isAcceptableOrUnknown(data['version']!, _versionMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(_deletedAtMeta,
+          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
+    }
+    if (data.containsKey('needs_sync')) {
+      context.handle(_needsSyncMeta,
+          needsSync.isAcceptableOrUnknown(data['needs_sync']!, _needsSyncMeta));
+    }
+    if (data.containsKey('last_synced_at')) {
+      context.handle(
+          _lastSyncedAtMeta,
+          lastSyncedAt.isAcceptableOrUnknown(
+              data['last_synced_at']!, _lastSyncedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  LocalClient map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalClient(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      organizationId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}organization_id'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      phone: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}phone']),
+      email: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}email']),
+      address: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}address']),
+      notes: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}notes']),
+      sourceLeadId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_lead_id']),
+      projectCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}project_count'])!,
+      version: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}version'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!,
+      deletedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at']),
+      needsSync: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}needs_sync'])!,
+      lastSyncedAt: attachedDatabase.typeMapping.read(
+          DriftSqlType.dateTime, data['${effectivePrefix}last_synced_at']),
+    );
+  }
+
+  @override
+  $LocalClientsTable createAlias(String alias) {
+    return $LocalClientsTable(attachedDatabase, alias);
+  }
+}
+
+class LocalClient extends DataClass implements Insertable<LocalClient> {
+  final String id;
+  final String organizationId;
+  final String name;
+  final String? phone;
+  final String? email;
+  final String? address;
+  final String? notes;
+  final String? sourceLeadId;
+  final int projectCount;
+  final int version;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final bool needsSync;
+  final DateTime? lastSyncedAt;
+  const LocalClient(
+      {required this.id,
+      required this.organizationId,
+      required this.name,
+      this.phone,
+      this.email,
+      this.address,
+      this.notes,
+      this.sourceLeadId,
+      required this.projectCount,
+      required this.version,
+      required this.createdAt,
+      required this.updatedAt,
+      this.deletedAt,
+      required this.needsSync,
+      this.lastSyncedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['organization_id'] = Variable<String>(organizationId);
+    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || phone != null) {
+      map['phone'] = Variable<String>(phone);
+    }
+    if (!nullToAbsent || email != null) {
+      map['email'] = Variable<String>(email);
+    }
+    if (!nullToAbsent || address != null) {
+      map['address'] = Variable<String>(address);
+    }
+    if (!nullToAbsent || notes != null) {
+      map['notes'] = Variable<String>(notes);
+    }
+    if (!nullToAbsent || sourceLeadId != null) {
+      map['source_lead_id'] = Variable<String>(sourceLeadId);
+    }
+    map['project_count'] = Variable<int>(projectCount);
+    map['version'] = Variable<int>(version);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    map['needs_sync'] = Variable<bool>(needsSync);
+    if (!nullToAbsent || lastSyncedAt != null) {
+      map['last_synced_at'] = Variable<DateTime>(lastSyncedAt);
+    }
+    return map;
+  }
+
+  LocalClientsCompanion toCompanion(bool nullToAbsent) {
+    return LocalClientsCompanion(
+      id: Value(id),
+      organizationId: Value(organizationId),
+      name: Value(name),
+      phone:
+          phone == null && nullToAbsent ? const Value.absent() : Value(phone),
+      email:
+          email == null && nullToAbsent ? const Value.absent() : Value(email),
+      address: address == null && nullToAbsent
+          ? const Value.absent()
+          : Value(address),
+      notes:
+          notes == null && nullToAbsent ? const Value.absent() : Value(notes),
+      sourceLeadId: sourceLeadId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceLeadId),
+      projectCount: Value(projectCount),
+      version: Value(version),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      needsSync: Value(needsSync),
+      lastSyncedAt: lastSyncedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastSyncedAt),
+    );
+  }
+
+  factory LocalClient.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalClient(
+      id: serializer.fromJson<String>(json['id']),
+      organizationId: serializer.fromJson<String>(json['organizationId']),
+      name: serializer.fromJson<String>(json['name']),
+      phone: serializer.fromJson<String?>(json['phone']),
+      email: serializer.fromJson<String?>(json['email']),
+      address: serializer.fromJson<String?>(json['address']),
+      notes: serializer.fromJson<String?>(json['notes']),
+      sourceLeadId: serializer.fromJson<String?>(json['sourceLeadId']),
+      projectCount: serializer.fromJson<int>(json['projectCount']),
+      version: serializer.fromJson<int>(json['version']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      needsSync: serializer.fromJson<bool>(json['needsSync']),
+      lastSyncedAt: serializer.fromJson<DateTime?>(json['lastSyncedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'organizationId': serializer.toJson<String>(organizationId),
+      'name': serializer.toJson<String>(name),
+      'phone': serializer.toJson<String?>(phone),
+      'email': serializer.toJson<String?>(email),
+      'address': serializer.toJson<String?>(address),
+      'notes': serializer.toJson<String?>(notes),
+      'sourceLeadId': serializer.toJson<String?>(sourceLeadId),
+      'projectCount': serializer.toJson<int>(projectCount),
+      'version': serializer.toJson<int>(version),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'needsSync': serializer.toJson<bool>(needsSync),
+      'lastSyncedAt': serializer.toJson<DateTime?>(lastSyncedAt),
+    };
+  }
+
+  LocalClient copyWith(
+          {String? id,
+          String? organizationId,
+          String? name,
+          Value<String?> phone = const Value.absent(),
+          Value<String?> email = const Value.absent(),
+          Value<String?> address = const Value.absent(),
+          Value<String?> notes = const Value.absent(),
+          Value<String?> sourceLeadId = const Value.absent(),
+          int? projectCount,
+          int? version,
+          DateTime? createdAt,
+          DateTime? updatedAt,
+          Value<DateTime?> deletedAt = const Value.absent(),
+          bool? needsSync,
+          Value<DateTime?> lastSyncedAt = const Value.absent()}) =>
+      LocalClient(
+        id: id ?? this.id,
+        organizationId: organizationId ?? this.organizationId,
+        name: name ?? this.name,
+        phone: phone.present ? phone.value : this.phone,
+        email: email.present ? email.value : this.email,
+        address: address.present ? address.value : this.address,
+        notes: notes.present ? notes.value : this.notes,
+        sourceLeadId:
+            sourceLeadId.present ? sourceLeadId.value : this.sourceLeadId,
+        projectCount: projectCount ?? this.projectCount,
+        version: version ?? this.version,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
+        deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+        needsSync: needsSync ?? this.needsSync,
+        lastSyncedAt:
+            lastSyncedAt.present ? lastSyncedAt.value : this.lastSyncedAt,
+      );
+  LocalClient copyWithCompanion(LocalClientsCompanion data) {
+    return LocalClient(
+      id: data.id.present ? data.id.value : this.id,
+      organizationId: data.organizationId.present
+          ? data.organizationId.value
+          : this.organizationId,
+      name: data.name.present ? data.name.value : this.name,
+      phone: data.phone.present ? data.phone.value : this.phone,
+      email: data.email.present ? data.email.value : this.email,
+      address: data.address.present ? data.address.value : this.address,
+      notes: data.notes.present ? data.notes.value : this.notes,
+      sourceLeadId: data.sourceLeadId.present
+          ? data.sourceLeadId.value
+          : this.sourceLeadId,
+      projectCount: data.projectCount.present
+          ? data.projectCount.value
+          : this.projectCount,
+      version: data.version.present ? data.version.value : this.version,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      needsSync: data.needsSync.present ? data.needsSync.value : this.needsSync,
+      lastSyncedAt: data.lastSyncedAt.present
+          ? data.lastSyncedAt.value
+          : this.lastSyncedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalClient(')
+          ..write('id: $id, ')
+          ..write('organizationId: $organizationId, ')
+          ..write('name: $name, ')
+          ..write('phone: $phone, ')
+          ..write('email: $email, ')
+          ..write('address: $address, ')
+          ..write('notes: $notes, ')
+          ..write('sourceLeadId: $sourceLeadId, ')
+          ..write('projectCount: $projectCount, ')
+          ..write('version: $version, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('needsSync: $needsSync, ')
+          ..write('lastSyncedAt: $lastSyncedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      organizationId,
+      name,
+      phone,
+      email,
+      address,
+      notes,
+      sourceLeadId,
+      projectCount,
+      version,
+      createdAt,
+      updatedAt,
+      deletedAt,
+      needsSync,
+      lastSyncedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalClient &&
+          other.id == this.id &&
+          other.organizationId == this.organizationId &&
+          other.name == this.name &&
+          other.phone == this.phone &&
+          other.email == this.email &&
+          other.address == this.address &&
+          other.notes == this.notes &&
+          other.sourceLeadId == this.sourceLeadId &&
+          other.projectCount == this.projectCount &&
+          other.version == this.version &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.needsSync == this.needsSync &&
+          other.lastSyncedAt == this.lastSyncedAt);
+}
+
+class LocalClientsCompanion extends UpdateCompanion<LocalClient> {
+  final Value<String> id;
+  final Value<String> organizationId;
+  final Value<String> name;
+  final Value<String?> phone;
+  final Value<String?> email;
+  final Value<String?> address;
+  final Value<String?> notes;
+  final Value<String?> sourceLeadId;
+  final Value<int> projectCount;
+  final Value<int> version;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<bool> needsSync;
+  final Value<DateTime?> lastSyncedAt;
+  final Value<int> rowid;
+  const LocalClientsCompanion({
+    this.id = const Value.absent(),
+    this.organizationId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.phone = const Value.absent(),
+    this.email = const Value.absent(),
+    this.address = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.sourceLeadId = const Value.absent(),
+    this.projectCount = const Value.absent(),
+    this.version = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.needsSync = const Value.absent(),
+    this.lastSyncedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalClientsCompanion.insert({
+    required String id,
+    required String organizationId,
+    required String name,
+    this.phone = const Value.absent(),
+    this.email = const Value.absent(),
+    this.address = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.sourceLeadId = const Value.absent(),
+    this.projectCount = const Value.absent(),
+    this.version = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.needsSync = const Value.absent(),
+    this.lastSyncedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        organizationId = Value(organizationId),
+        name = Value(name);
+  static Insertable<LocalClient> custom({
+    Expression<String>? id,
+    Expression<String>? organizationId,
+    Expression<String>? name,
+    Expression<String>? phone,
+    Expression<String>? email,
+    Expression<String>? address,
+    Expression<String>? notes,
+    Expression<String>? sourceLeadId,
+    Expression<int>? projectCount,
+    Expression<int>? version,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
+    Expression<bool>? needsSync,
+    Expression<DateTime>? lastSyncedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (organizationId != null) 'organization_id': organizationId,
+      if (name != null) 'name': name,
+      if (phone != null) 'phone': phone,
+      if (email != null) 'email': email,
+      if (address != null) 'address': address,
+      if (notes != null) 'notes': notes,
+      if (sourceLeadId != null) 'source_lead_id': sourceLeadId,
+      if (projectCount != null) 'project_count': projectCount,
+      if (version != null) 'version': version,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (needsSync != null) 'needs_sync': needsSync,
+      if (lastSyncedAt != null) 'last_synced_at': lastSyncedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalClientsCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? organizationId,
+      Value<String>? name,
+      Value<String?>? phone,
+      Value<String?>? email,
+      Value<String?>? address,
+      Value<String?>? notes,
+      Value<String?>? sourceLeadId,
+      Value<int>? projectCount,
+      Value<int>? version,
+      Value<DateTime>? createdAt,
+      Value<DateTime>? updatedAt,
+      Value<DateTime?>? deletedAt,
+      Value<bool>? needsSync,
+      Value<DateTime?>? lastSyncedAt,
+      Value<int>? rowid}) {
+    return LocalClientsCompanion(
+      id: id ?? this.id,
+      organizationId: organizationId ?? this.organizationId,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      email: email ?? this.email,
+      address: address ?? this.address,
+      notes: notes ?? this.notes,
+      sourceLeadId: sourceLeadId ?? this.sourceLeadId,
+      projectCount: projectCount ?? this.projectCount,
+      version: version ?? this.version,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      needsSync: needsSync ?? this.needsSync,
+      lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (organizationId.present) {
+      map['organization_id'] = Variable<String>(organizationId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (phone.present) {
+      map['phone'] = Variable<String>(phone.value);
+    }
+    if (email.present) {
+      map['email'] = Variable<String>(email.value);
+    }
+    if (address.present) {
+      map['address'] = Variable<String>(address.value);
+    }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
+    }
+    if (sourceLeadId.present) {
+      map['source_lead_id'] = Variable<String>(sourceLeadId.value);
+    }
+    if (projectCount.present) {
+      map['project_count'] = Variable<int>(projectCount.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (needsSync.present) {
+      map['needs_sync'] = Variable<bool>(needsSync.value);
+    }
+    if (lastSyncedAt.present) {
+      map['last_synced_at'] = Variable<DateTime>(lastSyncedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalClientsCompanion(')
+          ..write('id: $id, ')
+          ..write('organizationId: $organizationId, ')
+          ..write('name: $name, ')
+          ..write('phone: $phone, ')
+          ..write('email: $email, ')
+          ..write('address: $address, ')
+          ..write('notes: $notes, ')
+          ..write('sourceLeadId: $sourceLeadId, ')
+          ..write('projectCount: $projectCount, ')
+          ..write('version: $version, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('needsSync: $needsSync, ')
+          ..write('lastSyncedAt: $lastSyncedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -5757,6 +7065,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PendingSyncActionsTable pendingSyncActions =
       $PendingSyncActionsTable(this);
   late final $SyncCursorsTable syncCursors = $SyncCursorsTable(this);
+  late final $LocalJobPhotosTable localJobPhotos = $LocalJobPhotosTable(this);
+  late final $LocalClientsTable localClients = $LocalClientsTable(this);
   late final LeadsDao leadsDao = LeadsDao(this as AppDatabase);
   late final JobsDao jobsDao = JobsDao(this as AppDatabase);
   late final FollowupsDao followupsDao = FollowupsDao(this as AppDatabase);
@@ -5764,6 +7074,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final TemplatesDao templatesDao = TemplatesDao(this as AppDatabase);
   late final OrganizationsDao organizationsDao =
       OrganizationsDao(this as AppDatabase);
+  late final JobPhotosDao jobPhotosDao = JobPhotosDao(this as AppDatabase);
+  late final ClientsDao clientsDao = ClientsDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -5778,7 +7090,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         localOrganizations,
         localProfiles,
         pendingSyncActions,
-        syncCursors
+        syncCursors,
+        localJobPhotos,
+        localClients
       ];
 }
 
@@ -6141,6 +7455,7 @@ typedef $$LocalJobsTableCreateCompanionBuilder = LocalJobsCompanion Function({
   Value<String?> leadId,
   required String clientName,
   required String jobType,
+  Value<String?> notes,
   Value<String> phase,
   Value<String> healthStatus,
   Value<DateTime?> estimatedCompletionDate,
@@ -6158,6 +7473,7 @@ typedef $$LocalJobsTableUpdateCompanionBuilder = LocalJobsCompanion Function({
   Value<String?> leadId,
   Value<String> clientName,
   Value<String> jobType,
+  Value<String?> notes,
   Value<String> phase,
   Value<String> healthStatus,
   Value<DateTime?> estimatedCompletionDate,
@@ -6194,6 +7510,9 @@ class $$LocalJobsTableFilterComposer
 
   ColumnFilters<String> get jobType => $composableBuilder(
       column: $table.jobType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get phase => $composableBuilder(
       column: $table.phase, builder: (column) => ColumnFilters(column));
@@ -6249,6 +7568,9 @@ class $$LocalJobsTableOrderingComposer
   ColumnOrderings<String> get jobType => $composableBuilder(
       column: $table.jobType, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get phase => $composableBuilder(
       column: $table.phase, builder: (column) => ColumnOrderings(column));
 
@@ -6303,6 +7625,9 @@ class $$LocalJobsTableAnnotationComposer
 
   GeneratedColumn<String> get jobType =>
       $composableBuilder(column: $table.jobType, builder: (column) => column);
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
 
   GeneratedColumn<String> get phase =>
       $composableBuilder(column: $table.phase, builder: (column) => column);
@@ -6360,6 +7685,7 @@ class $$LocalJobsTableTableManager extends RootTableManager<
             Value<String?> leadId = const Value.absent(),
             Value<String> clientName = const Value.absent(),
             Value<String> jobType = const Value.absent(),
+            Value<String?> notes = const Value.absent(),
             Value<String> phase = const Value.absent(),
             Value<String> healthStatus = const Value.absent(),
             Value<DateTime?> estimatedCompletionDate = const Value.absent(),
@@ -6377,6 +7703,7 @@ class $$LocalJobsTableTableManager extends RootTableManager<
             leadId: leadId,
             clientName: clientName,
             jobType: jobType,
+            notes: notes,
             phase: phase,
             healthStatus: healthStatus,
             estimatedCompletionDate: estimatedCompletionDate,
@@ -6394,6 +7721,7 @@ class $$LocalJobsTableTableManager extends RootTableManager<
             Value<String?> leadId = const Value.absent(),
             required String clientName,
             required String jobType,
+            Value<String?> notes = const Value.absent(),
             Value<String> phase = const Value.absent(),
             Value<String> healthStatus = const Value.absent(),
             Value<DateTime?> estimatedCompletionDate = const Value.absent(),
@@ -6411,6 +7739,7 @@ class $$LocalJobsTableTableManager extends RootTableManager<
             leadId: leadId,
             clientName: clientName,
             jobType: jobType,
+            notes: notes,
             phase: phase,
             healthStatus: healthStatus,
             estimatedCompletionDate: estimatedCompletionDate,
@@ -8467,6 +9796,588 @@ typedef $$SyncCursorsTableProcessedTableManager = ProcessedTableManager<
     (SyncCursor, BaseReferences<_$AppDatabase, $SyncCursorsTable, SyncCursor>),
     SyncCursor,
     PrefetchHooks Function()>;
+typedef $$LocalJobPhotosTableCreateCompanionBuilder = LocalJobPhotosCompanion
+    Function({
+  required String id,
+  required String jobId,
+  required String organizationId,
+  Value<String?> storagePath,
+  Value<String?> localFilePath,
+  Value<String?> takenAtSource,
+  Value<DateTime?> uploadedAt,
+  Value<DateTime> createdAt,
+  Value<bool> needsSync,
+  Value<DateTime?> lastSyncedAt,
+  Value<int> rowid,
+});
+typedef $$LocalJobPhotosTableUpdateCompanionBuilder = LocalJobPhotosCompanion
+    Function({
+  Value<String> id,
+  Value<String> jobId,
+  Value<String> organizationId,
+  Value<String?> storagePath,
+  Value<String?> localFilePath,
+  Value<String?> takenAtSource,
+  Value<DateTime?> uploadedAt,
+  Value<DateTime> createdAt,
+  Value<bool> needsSync,
+  Value<DateTime?> lastSyncedAt,
+  Value<int> rowid,
+});
+
+class $$LocalJobPhotosTableFilterComposer
+    extends Composer<_$AppDatabase, $LocalJobPhotosTable> {
+  $$LocalJobPhotosTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get jobId => $composableBuilder(
+      column: $table.jobId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get organizationId => $composableBuilder(
+      column: $table.organizationId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get storagePath => $composableBuilder(
+      column: $table.storagePath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get localFilePath => $composableBuilder(
+      column: $table.localFilePath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get takenAtSource => $composableBuilder(
+      column: $table.takenAtSource, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get uploadedAt => $composableBuilder(
+      column: $table.uploadedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get needsSync => $composableBuilder(
+      column: $table.needsSync, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get lastSyncedAt => $composableBuilder(
+      column: $table.lastSyncedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalJobPhotosTableOrderingComposer
+    extends Composer<_$AppDatabase, $LocalJobPhotosTable> {
+  $$LocalJobPhotosTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get jobId => $composableBuilder(
+      column: $table.jobId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get organizationId => $composableBuilder(
+      column: $table.organizationId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get storagePath => $composableBuilder(
+      column: $table.storagePath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get localFilePath => $composableBuilder(
+      column: $table.localFilePath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get takenAtSource => $composableBuilder(
+      column: $table.takenAtSource,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get uploadedAt => $composableBuilder(
+      column: $table.uploadedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get needsSync => $composableBuilder(
+      column: $table.needsSync, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get lastSyncedAt => $composableBuilder(
+      column: $table.lastSyncedAt,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalJobPhotosTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LocalJobPhotosTable> {
+  $$LocalJobPhotosTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get jobId =>
+      $composableBuilder(column: $table.jobId, builder: (column) => column);
+
+  GeneratedColumn<String> get organizationId => $composableBuilder(
+      column: $table.organizationId, builder: (column) => column);
+
+  GeneratedColumn<String> get storagePath => $composableBuilder(
+      column: $table.storagePath, builder: (column) => column);
+
+  GeneratedColumn<String> get localFilePath => $composableBuilder(
+      column: $table.localFilePath, builder: (column) => column);
+
+  GeneratedColumn<String> get takenAtSource => $composableBuilder(
+      column: $table.takenAtSource, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get uploadedAt => $composableBuilder(
+      column: $table.uploadedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get needsSync =>
+      $composableBuilder(column: $table.needsSync, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastSyncedAt => $composableBuilder(
+      column: $table.lastSyncedAt, builder: (column) => column);
+}
+
+class $$LocalJobPhotosTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $LocalJobPhotosTable,
+    LocalJobPhoto,
+    $$LocalJobPhotosTableFilterComposer,
+    $$LocalJobPhotosTableOrderingComposer,
+    $$LocalJobPhotosTableAnnotationComposer,
+    $$LocalJobPhotosTableCreateCompanionBuilder,
+    $$LocalJobPhotosTableUpdateCompanionBuilder,
+    (
+      LocalJobPhoto,
+      BaseReferences<_$AppDatabase, $LocalJobPhotosTable, LocalJobPhoto>
+    ),
+    LocalJobPhoto,
+    PrefetchHooks Function()> {
+  $$LocalJobPhotosTableTableManager(
+      _$AppDatabase db, $LocalJobPhotosTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalJobPhotosTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalJobPhotosTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalJobPhotosTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> jobId = const Value.absent(),
+            Value<String> organizationId = const Value.absent(),
+            Value<String?> storagePath = const Value.absent(),
+            Value<String?> localFilePath = const Value.absent(),
+            Value<String?> takenAtSource = const Value.absent(),
+            Value<DateTime?> uploadedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<bool> needsSync = const Value.absent(),
+            Value<DateTime?> lastSyncedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LocalJobPhotosCompanion(
+            id: id,
+            jobId: jobId,
+            organizationId: organizationId,
+            storagePath: storagePath,
+            localFilePath: localFilePath,
+            takenAtSource: takenAtSource,
+            uploadedAt: uploadedAt,
+            createdAt: createdAt,
+            needsSync: needsSync,
+            lastSyncedAt: lastSyncedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String jobId,
+            required String organizationId,
+            Value<String?> storagePath = const Value.absent(),
+            Value<String?> localFilePath = const Value.absent(),
+            Value<String?> takenAtSource = const Value.absent(),
+            Value<DateTime?> uploadedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<bool> needsSync = const Value.absent(),
+            Value<DateTime?> lastSyncedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LocalJobPhotosCompanion.insert(
+            id: id,
+            jobId: jobId,
+            organizationId: organizationId,
+            storagePath: storagePath,
+            localFilePath: localFilePath,
+            takenAtSource: takenAtSource,
+            uploadedAt: uploadedAt,
+            createdAt: createdAt,
+            needsSync: needsSync,
+            lastSyncedAt: lastSyncedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$LocalJobPhotosTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $LocalJobPhotosTable,
+    LocalJobPhoto,
+    $$LocalJobPhotosTableFilterComposer,
+    $$LocalJobPhotosTableOrderingComposer,
+    $$LocalJobPhotosTableAnnotationComposer,
+    $$LocalJobPhotosTableCreateCompanionBuilder,
+    $$LocalJobPhotosTableUpdateCompanionBuilder,
+    (
+      LocalJobPhoto,
+      BaseReferences<_$AppDatabase, $LocalJobPhotosTable, LocalJobPhoto>
+    ),
+    LocalJobPhoto,
+    PrefetchHooks Function()>;
+typedef $$LocalClientsTableCreateCompanionBuilder = LocalClientsCompanion
+    Function({
+  required String id,
+  required String organizationId,
+  required String name,
+  Value<String?> phone,
+  Value<String?> email,
+  Value<String?> address,
+  Value<String?> notes,
+  Value<String?> sourceLeadId,
+  Value<int> projectCount,
+  Value<int> version,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<bool> needsSync,
+  Value<DateTime?> lastSyncedAt,
+  Value<int> rowid,
+});
+typedef $$LocalClientsTableUpdateCompanionBuilder = LocalClientsCompanion
+    Function({
+  Value<String> id,
+  Value<String> organizationId,
+  Value<String> name,
+  Value<String?> phone,
+  Value<String?> email,
+  Value<String?> address,
+  Value<String?> notes,
+  Value<String?> sourceLeadId,
+  Value<int> projectCount,
+  Value<int> version,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<bool> needsSync,
+  Value<DateTime?> lastSyncedAt,
+  Value<int> rowid,
+});
+
+class $$LocalClientsTableFilterComposer
+    extends Composer<_$AppDatabase, $LocalClientsTable> {
+  $$LocalClientsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get organizationId => $composableBuilder(
+      column: $table.organizationId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get email => $composableBuilder(
+      column: $table.email, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get address => $composableBuilder(
+      column: $table.address, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceLeadId => $composableBuilder(
+      column: $table.sourceLeadId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get projectCount => $composableBuilder(
+      column: $table.projectCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get version => $composableBuilder(
+      column: $table.version, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get needsSync => $composableBuilder(
+      column: $table.needsSync, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get lastSyncedAt => $composableBuilder(
+      column: $table.lastSyncedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalClientsTableOrderingComposer
+    extends Composer<_$AppDatabase, $LocalClientsTable> {
+  $$LocalClientsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get organizationId => $composableBuilder(
+      column: $table.organizationId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get email => $composableBuilder(
+      column: $table.email, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get address => $composableBuilder(
+      column: $table.address, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceLeadId => $composableBuilder(
+      column: $table.sourceLeadId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get projectCount => $composableBuilder(
+      column: $table.projectCount,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get version => $composableBuilder(
+      column: $table.version, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get needsSync => $composableBuilder(
+      column: $table.needsSync, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get lastSyncedAt => $composableBuilder(
+      column: $table.lastSyncedAt,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalClientsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LocalClientsTable> {
+  $$LocalClientsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get organizationId => $composableBuilder(
+      column: $table.organizationId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get phone =>
+      $composableBuilder(column: $table.phone, builder: (column) => column);
+
+  GeneratedColumn<String> get email =>
+      $composableBuilder(column: $table.email, builder: (column) => column);
+
+  GeneratedColumn<String> get address =>
+      $composableBuilder(column: $table.address, builder: (column) => column);
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceLeadId => $composableBuilder(
+      column: $table.sourceLeadId, builder: (column) => column);
+
+  GeneratedColumn<int> get projectCount => $composableBuilder(
+      column: $table.projectCount, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get needsSync =>
+      $composableBuilder(column: $table.needsSync, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastSyncedAt => $composableBuilder(
+      column: $table.lastSyncedAt, builder: (column) => column);
+}
+
+class $$LocalClientsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $LocalClientsTable,
+    LocalClient,
+    $$LocalClientsTableFilterComposer,
+    $$LocalClientsTableOrderingComposer,
+    $$LocalClientsTableAnnotationComposer,
+    $$LocalClientsTableCreateCompanionBuilder,
+    $$LocalClientsTableUpdateCompanionBuilder,
+    (
+      LocalClient,
+      BaseReferences<_$AppDatabase, $LocalClientsTable, LocalClient>
+    ),
+    LocalClient,
+    PrefetchHooks Function()> {
+  $$LocalClientsTableTableManager(_$AppDatabase db, $LocalClientsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalClientsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalClientsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalClientsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> organizationId = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<String?> phone = const Value.absent(),
+            Value<String?> email = const Value.absent(),
+            Value<String?> address = const Value.absent(),
+            Value<String?> notes = const Value.absent(),
+            Value<String?> sourceLeadId = const Value.absent(),
+            Value<int> projectCount = const Value.absent(),
+            Value<int> version = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
+            Value<bool> needsSync = const Value.absent(),
+            Value<DateTime?> lastSyncedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LocalClientsCompanion(
+            id: id,
+            organizationId: organizationId,
+            name: name,
+            phone: phone,
+            email: email,
+            address: address,
+            notes: notes,
+            sourceLeadId: sourceLeadId,
+            projectCount: projectCount,
+            version: version,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            deletedAt: deletedAt,
+            needsSync: needsSync,
+            lastSyncedAt: lastSyncedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String organizationId,
+            required String name,
+            Value<String?> phone = const Value.absent(),
+            Value<String?> email = const Value.absent(),
+            Value<String?> address = const Value.absent(),
+            Value<String?> notes = const Value.absent(),
+            Value<String?> sourceLeadId = const Value.absent(),
+            Value<int> projectCount = const Value.absent(),
+            Value<int> version = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
+            Value<bool> needsSync = const Value.absent(),
+            Value<DateTime?> lastSyncedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LocalClientsCompanion.insert(
+            id: id,
+            organizationId: organizationId,
+            name: name,
+            phone: phone,
+            email: email,
+            address: address,
+            notes: notes,
+            sourceLeadId: sourceLeadId,
+            projectCount: projectCount,
+            version: version,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            deletedAt: deletedAt,
+            needsSync: needsSync,
+            lastSyncedAt: lastSyncedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$LocalClientsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $LocalClientsTable,
+    LocalClient,
+    $$LocalClientsTableFilterComposer,
+    $$LocalClientsTableOrderingComposer,
+    $$LocalClientsTableAnnotationComposer,
+    $$LocalClientsTableCreateCompanionBuilder,
+    $$LocalClientsTableUpdateCompanionBuilder,
+    (
+      LocalClient,
+      BaseReferences<_$AppDatabase, $LocalClientsTable, LocalClient>
+    ),
+    LocalClient,
+    PrefetchHooks Function()>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -8492,4 +10403,8 @@ class $AppDatabaseManager {
       $$PendingSyncActionsTableTableManager(_db, _db.pendingSyncActions);
   $$SyncCursorsTableTableManager get syncCursors =>
       $$SyncCursorsTableTableManager(_db, _db.syncCursors);
+  $$LocalJobPhotosTableTableManager get localJobPhotos =>
+      $$LocalJobPhotosTableTableManager(_db, _db.localJobPhotos);
+  $$LocalClientsTableTableManager get localClients =>
+      $$LocalClientsTableTableManager(_db, _db.localClients);
 }
