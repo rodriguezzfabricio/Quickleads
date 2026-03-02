@@ -41,6 +41,8 @@ interface PullEntitySpec {
   entityType:
     | "lead"
     | "job"
+    | "client"
+    | "job_photo"
     | "followup_sequence"
     | "followup_message"
     | "call_log"
@@ -50,6 +52,8 @@ interface PullEntitySpec {
   tableName:
     | "leads"
     | "jobs"
+    | "clients"
+    | "job_photos"
     | "followup_sequences"
     | "followup_messages"
     | "call_logs"
@@ -70,6 +74,8 @@ interface IndexedChange {
 const PULL_ENTITY_SPECS: PullEntitySpec[] = [
   { entityType: "lead", tableName: "leads", cursorColumn: "updated_at" },
   { entityType: "job", tableName: "jobs", cursorColumn: "updated_at" },
+  { entityType: "client", tableName: "clients", cursorColumn: "updated_at" },
+  { entityType: "job_photo", tableName: "job_photos", cursorColumn: "created_at" },
   { entityType: "followup_sequence", tableName: "followup_sequences", cursorColumn: "updated_at" },
   { entityType: "followup_message", tableName: "followup_messages", cursorColumn: "updated_at" },
   { entityType: "call_log", tableName: "call_logs", cursorColumn: "created_at" },

@@ -3,13 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router/app_router.dart';
-import '../../core/constants/app_tokens.dart';
 import '../../core/domain/lead_status_mapper.dart';
+import '../../core/services/lead_actions_service.dart';
 import '../../core/storage/app_database.dart';
 import '../../core/storage/providers.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/lead_card.dart';
 
-const _kFilters = [
+const _filters = [
   ('all', 'All'),
   ('new_callback', 'Callback'),
   ('estimate_sent', 'Estimate'),
@@ -31,8 +35,8 @@ class LeadsScreen extends ConsumerStatefulWidget {
 
 class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   late String _selectedFilter;
-  String? _updatingLeadId;
   String? _expandedLeadId;
+  String? _updatingLeadId;
 
   @override
   void initState() {
@@ -43,44 +47,96 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   @override
   void didUpdateWidget(covariant LeadsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.initialStatus != widget.initialStatus) {
+    if (widget.initialStatus != oldWidget.initialStatus) {
       _selectedFilter = _normalizeFilter(widget.initialStatus);
       _expandedLeadId = null;
     }
   }
 
   Future<void> _markEstimateSent(LocalLead lead) async {
-    if (_updatingLeadId != null) {
-      return;
-    }
+    if (_updatingLeadId != null) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Estimate Sent?'),
-        content: Text(
-          'Start the automated follow-up sequence for ${lead.clientName}?',
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: GlassCard(
+          borderRadius: 20,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Start automatic follow-ups?',
+                style: AppTextStyles.h2.copyWith(fontSize: 20),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Start automatic follow-ups for ${lead.clientName}?',
+                style: AppTextStyles.secondary,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.systemYellow,
+                        foregroundColor: Colors.black,
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Yes',
+                        style: AppTextStyles.h4.copyWith(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        side: const BorderSide(color: AppColors.glassBorder),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text('No',
+                          style: AppTextStyles.h4.copyWith(fontSize: 15)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Confirm'),
-          ),
-        ],
       ),
     );
 
-    if (confirmed != true) {
-      return;
-    }
+    if (confirmed != true) return;
 
     setState(() => _updatingLeadId = lead.id);
     try {
-      await ref.read(leadActionsServiceProvider).markEstimateSent(lead);
+      final result =
+          await ref.read(leadActionsServiceProvider).markEstimateSent(lead);
+      if (!mounted) return;
+      if (result.persistence == EstimateSentPersistence.queuedLocally) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saved locally. Syncing to cloud in background.'),
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -93,38 +149,26 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     }
   }
 
-  void _handleCardTap(LocalLead lead) {
+  void _selectFilter(String filter) {
+    final normalized = _normalizeFilter(filter);
+    setState(() {
+      _selectedFilter = normalized;
+      _expandedLeadId = null;
+    });
+
+    final location = normalized == 'all'
+        ? AppRoutes.leads
+        : Uri(path: AppRoutes.leads, queryParameters: {'status': normalized})
+            .toString();
+    context.go(location);
+  }
+
+  void _handleLeadTap(LocalLead lead) {
     if (_expandedLeadId == lead.id) {
       context.push(AppRoutes.leadDetail.replaceFirst(':leadId', lead.id));
       return;
     }
     setState(() => _expandedLeadId = lead.id);
-  }
-
-  void _openAddAsClient(LocalLead lead) {
-    final query = <String, String>{
-      'name': lead.clientName,
-      if (lead.phoneE164 != null && lead.phoneE164!.trim().isNotEmpty)
-        'phone': lead.phoneE164!,
-    };
-    final uri = Uri(path: AppRoutes.clientCreate, queryParameters: query);
-    context.push(uri.toString());
-  }
-
-  void _selectFilter(String filter) {
-    final normalizedFilter = _normalizeFilter(filter);
-    setState(() {
-      _selectedFilter = normalizedFilter;
-      _expandedLeadId = null;
-    });
-
-    final location = normalizedFilter == 'all'
-        ? AppRoutes.leads
-        : Uri(
-            path: AppRoutes.leads,
-            queryParameters: {'status': normalizedFilter},
-          ).toString();
-    context.go(location);
   }
 
   @override
@@ -141,6 +185,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
         ref.watch(unknownCallsProvider(orgId)).valueOrNull?.length ?? 0;
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: leadsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -151,73 +196,137 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
             final filtered = _filterLeads(leads, _selectedFilter);
 
             return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
               children: [
-                Text('Leads',
-                    style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(height: 14),
-                _FilterStrip(
-                  selectedFilter: _selectedFilter,
-                  onSelectFilter: _selectFilter,
+                _stagger(
+                  0,
+                  Text('Leads', style: AppTextStyles.h1),
                 ),
-                const SizedBox(height: 16),
-                _ReviewCallsCard(
-                  count: unknownCallsCount,
-                  onTap: () => context.push(AppRoutes.dailySweepReview),
+                const SizedBox(height: 12),
+                _stagger(
+                  1,
+                  _FilterStrip(
+                    selectedFilter: _selectedFilter,
+                    onSelectFilter: _selectFilter,
+                  ),
                 ),
-                const SizedBox(height: 14),
-                if (filtered.isEmpty)
-                  const _EmptyState()
-                else
-                  ...filtered.map(
-                    (lead) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
+                const SizedBox(height: 12),
+                _stagger(
+                  2,
+                  GestureDetector(
+                    onTap: () => context.push(AppRoutes.dailySweepReview),
+                    child: GlassCard(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
                         children: [
-                          _LeadCard(
-                            lead: lead,
-                            isUpdating: _updatingLeadId == lead.id,
-                            onTap: () => _handleCardTap(lead),
-                            onEstimateSent:
-                                LeadStatusMapper.canonicalize(lead.status) ==
-                                        LeadStatusMapper.callbackDb
-                                    ? () => _markEstimateSent(lead)
-                                    : null,
+                          const Icon(Icons.phone_callback_outlined,
+                              size: 18, color: AppColors.systemBlue),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Review Calls',
+                            style: AppTextStyles.h4.copyWith(
+                              fontSize: 15,
+                              color: AppColors.foreground,
+                            ),
                           ),
-                          if (_expandedLeadId == lead.id)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton(
-                                      onPressed: () => context.push(
-                                        AppRoutes.leadDetail
-                                            .replaceFirst(':leadId', lead.id),
-                                      ),
-                                      child: const Text('View Profile'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _openAddAsClient(lead),
-                                      icon: const Icon(Icons.person_add_alt_1),
-                                      label: const Text('Add as Client'),
-                                    ),
-                                  ),
-                                ],
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.systemBlue,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '$unknownCallsCount',
+                              style: AppTextStyles.badge.copyWith(
+                                fontSize: 12,
+                                color: Colors.white,
                               ),
                             ),
+                          ),
                         ],
                       ),
                     ),
                   ),
+                ),
+                const SizedBox(height: 10),
+                if (filtered.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 80),
+                    child: Column(
+                      children: [
+                        Text(
+                          'No leads found',
+                          style: AppTextStyles.h3.copyWith(fontSize: 17),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Tap + to add a new lead',
+                          style: AppTextStyles.label,
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  for (var i = 0; i < filtered.length; i++) ...[
+                    _stagger(
+                      i + 3,
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: LeadCard(
+                          lead: filtered[i],
+                          expanded: _expandedLeadId == filtered[i].id,
+                          onTap: () => _handleLeadTap(filtered[i]),
+                          onEstimateSent: LeadStatusMapper.canonicalize(
+                                      filtered[i].status) ==
+                                  LeadStatusMapper.callbackDb
+                              ? () => _markEstimateSent(filtered[i])
+                              : null,
+                          onViewProfile: () => context.push(
+                            AppRoutes.leadDetail
+                                .replaceFirst(':leadId', filtered[i].id),
+                          ),
+                          onAddAsClient: () {
+                            final query = <String, String>{
+                              'leadId': filtered[i].id,
+                              'name': filtered[i].clientName,
+                              if (filtered[i].phoneE164 != null &&
+                                  filtered[i].phoneE164!.trim().isNotEmpty)
+                                'phone': filtered[i].phoneE164!,
+                            };
+                            final uri = Uri(
+                                path: AppRoutes.clientCreate,
+                                queryParameters: query);
+                            context.push(uri.toString());
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
               ],
             );
           },
         ),
       ),
+    );
+  }
+
+  Widget _stagger(int index, Widget child) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Duration(milliseconds: 300 + (index * 40)),
+      curve: Curves.easeOut,
+      builder: (context, value, _) {
+        final delayed = ((value - (index * 0.03)).clamp(0, 1)).toDouble();
+        return Opacity(
+          opacity: delayed,
+          child: Transform.translate(
+            offset: Offset(0, (1 - delayed) * 8),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }
@@ -233,314 +342,52 @@ class _FilterStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTokens.glassElevated,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppTokens.glassBorder),
-      ),
-      padding: const EdgeInsets.all(3),
-      child: Row(
-        children: _kFilters.map((filter) {
-          final isSelected = filter.$1 == selectedFilter;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => onSelectFilter(filter.$1),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Colors.white.withValues(alpha: 0.14)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  border: isSelected
-                      ? Border.all(color: Colors.white.withValues(alpha: 0.18))
-                      : null,
-                ),
-                child: Text(
-                  filter.$2,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.onSurface
-                            : Theme.of(context).colorScheme.outline,
-                      ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
-class _ReviewCallsCard extends StatelessWidget {
-  const _ReviewCallsCard({
-    required this.count,
-    required this.onTap,
-  });
-
-  final int count;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppTokens.glassElevated,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppTokens.glassBorder),
-          ),
-          child: Row(
-            children: [
-              Text(
-                'Review Calls',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const Spacer(),
-              Text(
-                '$count to review',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: AppColors.glassElevated,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.glassBorder),
+        ),
+        child: Row(
+          children: [
+            for (final filter in _filters)
+              GestureDetector(
+                onTap: () => onSelectFilter(filter.$1),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: selectedFilter == filter.$1
+                        ? AppColors.glassProminent
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    filter.$2,
+                    style: AppTextStyles.label.copyWith(
+                      textBaseline: TextBaseline.alphabetic,
+                      fontSize: 13,
+                      letterSpacing: 0,
+                      color: selectedFilter == filter.$1
+                          ? AppColors.foreground
+                          : AppColors.mutedFg,
+                      fontWeight: selectedFilter == filter.$1
+                          ? FontWeight.w600
+                          : FontWeight.w500,
                     ),
+                  ),
+                ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );
   }
-}
-
-class _LeadCard extends StatelessWidget {
-  const _LeadCard({
-    required this.lead,
-    required this.isUpdating,
-    required this.onTap,
-    required this.onEstimateSent,
-  });
-
-  final LocalLead lead;
-  final bool isUpdating;
-  final VoidCallback onTap;
-  final VoidCallback? onEstimateSent;
-
-  @override
-  Widget build(BuildContext context) {
-    final status = _statusStyle(lead.status);
-    final phone = lead.phoneE164 ?? 'No phone on file';
-
-    return Material(
-      color: AppTokens.glassElevated,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppTokens.glassBorder),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          lead.clientName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontSize: 31 / 2,
-                                  ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          lead.jobType,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyLarge
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: status.tint,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      status.label,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: status.color,
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 9),
-              Row(
-                children: [
-                  Icon(
-                    Icons.phone_outlined,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(width: 7),
-                  Text(
-                    phone,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                  ),
-                ],
-              ),
-              if (onEstimateSent != null) ...[
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: isUpdating ? null : onEstimateSent,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                    backgroundColor: const Color(0xFFFFD60A),
-                    foregroundColor: Colors.black,
-                  ),
-                  child: isUpdating
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text(
-                          'Estimate Sent?',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                ),
-              ],
-              if (_isEstimateLead(lead)) ...[
-                const SizedBox(height: 12),
-                Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
-                const SizedBox(height: 10),
-                Text(
-                  'Follow-up 1: Day 2 ⏳ Scheduled',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Follow-up 2: Day 5 ⏳ Scheduled',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Follow-up 3: Day 10 ⏳ Scheduled',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 44),
-      child: Column(
-        children: [
-          Text(
-            'No leads found',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Use the + button to add a new lead.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusStyle {
-  const _StatusStyle({
-    required this.label,
-    required this.color,
-    required this.tint,
-  });
-
-  final String label;
-  final Color color;
-  final Color tint;
-}
-
-_StatusStyle _statusStyle(String status) {
-  return switch (LeadStatusMapper.canonicalize(status)) {
-    LeadStatusMapper.callbackDb => const _StatusStyle(
-        label: 'Callback',
-        color: AppTokens.danger,
-        tint: Color.fromRGBO(255, 69, 58, 0.2),
-      ),
-    LeadStatusMapper.estimateDb => const _StatusStyle(
-        label: 'Estimate',
-        color: AppTokens.warning,
-        tint: Color.fromRGBO(255, 159, 10, 0.2),
-      ),
-    LeadStatusMapper.wonDb => const _StatusStyle(
-        label: 'Won',
-        color: AppTokens.success,
-        tint: Color.fromRGBO(74, 158, 126, 0.2),
-      ),
-    LeadStatusMapper.coldDb => _StatusStyle(
-        label: 'Cold',
-        color: Colors.white.withValues(alpha: 0.58),
-        tint: Colors.white.withValues(alpha: 0.07),
-      ),
-    _ => _StatusStyle(
-        label: LeadStatusMapper.toUiLabel(status),
-        color: Colors.white.withValues(alpha: 0.58),
-        tint: Colors.white.withValues(alpha: 0.07),
-      ),
-  };
-}
-
-bool _isEstimateLead(LocalLead lead) {
-  return LeadStatusMapper.isEstimateLike(lead.status);
 }
 
 String _normalizeFilter(String? status) {
@@ -564,7 +411,13 @@ List<LocalLead> _filterLeads(List<LocalLead> leads, String filter) {
               LeadStatusMapper.callbackDb,
         )
         .toList(),
-    LeadStatusMapper.estimateDb => leads.where(_isEstimateLead).toList(),
+    LeadStatusMapper.estimateDb => leads
+        .where(
+          (lead) =>
+              LeadStatusMapper.canonicalize(lead.status) ==
+              LeadStatusMapper.estimateDb,
+        )
+        .toList(),
     LeadStatusMapper.wonDb => leads
         .where(
           (lead) =>

@@ -23,3 +23,15 @@ Tokens align to the React prototype:
 ## Current Status
 
 Flutter SDK is not available in this environment, so this is a source scaffold and structure baseline. It is ready to be completed in a Flutter-enabled environment.
+
+## Backend Preflight
+
+Before running the app against cloud Supabase, run:
+
+```bash
+./scripts/flutter_backend_preflight.sh
+```
+
+If this fails, use:
+
+- `../planning/FLUTTER_BACKEND_SYNC_RUNBOOK.md`

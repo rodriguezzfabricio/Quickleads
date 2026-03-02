@@ -32,6 +32,7 @@ interface SyncMutationRequest {
   entity:
     | "lead"
     | "job"
+    | "client"
     | "followup_sequence"
     | "call_log"
     | "import"
@@ -71,6 +72,7 @@ interface ApiSuccess {
 const ENTITY_TYPES = new Set([
   "lead",
   "job",
+  "client",
   "followup_sequence",
   "call_log",
   "import",
@@ -82,6 +84,10 @@ const ENTITY_TYPES = new Set([
 const MUTATION_TYPES = new Set(["insert", "update", "delete", "status_transition"] as const);
 const LEAD_TERMINAL_STATUSES = new Set(["won", "cold"]);
 const LEAD_EARLY_STATUSES = new Set(["new_callback", "estimate_sent"]);
+const FOLLOWUP_SEQUENCE_STATES = new Set(["active", "paused", "stopped", "completed"]);
+const JOB_PHASES = ["demo", "rough", "electrical_plumbing", "finishing", "walkthrough", "complete"] as const;
+const JOB_PHASE_SET = new Set(JOB_PHASES);
+const JOB_HEALTH_SET = new Set(["green", "yellow", "red"] as const);
 const FOLLOWUP_STATE_PRIORITY: Record<string, number> = {
   none: 0,
   active: 1,
@@ -104,6 +110,11 @@ const ENTITY_CONFIG: Record<SyncMutationRequest["entity"], EntityConfig> = {
   },
   job: {
     tableName: "jobs",
+    isVersioned: true,
+    supportsSoftDelete: true,
+  },
+  client: {
+    tableName: "clients",
     isVersioned: true,
     supportsSoftDelete: true,
   },
@@ -171,6 +182,31 @@ function isFollowupStateDowngrade(currentState: string, nextState: string): bool
   return nextPriority < currentPriority;
 }
 
+function isValidJobPhaseTransition(currentPhase: string, nextPhase: string): boolean {
+  const currentIndex = JOB_PHASES.indexOf(currentPhase as (typeof JOB_PHASES)[number]);
+  const nextIndex = JOB_PHASES.indexOf(nextPhase as (typeof JOB_PHASES)[number]);
+  if (currentIndex < 0 || nextIndex < 0) {
+    return false;
+  }
+  return Math.abs(nextIndex - currentIndex) <= 1;
+}
+
+function validateJobPayload(payload: Record<string, unknown>): string | null {
+  if (payload.phase != null) {
+    if (typeof payload.phase !== "string" || !JOB_PHASE_SET.has(payload.phase as (typeof JOB_PHASES)[number])) {
+      return "Job phase must be one of demo, rough, electrical_plumbing, finishing, walkthrough, complete.";
+    }
+  }
+
+  if (payload.health_status != null) {
+    if (typeof payload.health_status !== "string" || !JOB_HEALTH_SET.has(payload.health_status as "green" | "yellow" | "red")) {
+      return "Job health_status must be one of green, yellow, red.";
+    }
+  }
+
+  return null;
+}
+
 function sanitizeUpdatePayload(payload: Record<string, unknown>): Record<string, unknown> {
   const nextPayload = { ...payload };
   delete nextPayload.id;
@@ -227,6 +263,10 @@ async function resolveCurrentRow(
     selectColumns.push("status", "followup_state");
   }
 
+  if (mutation.entity === "job") {
+    selectColumns.push("phase", "health_status");
+  }
+
   const { data, error } = await auth.client
     .from(config.tableName)
     .select(selectColumns.join(", "))
@@ -243,6 +283,61 @@ async function resolveCurrentRow(
   }
 
   return data as Record<string, unknown>;
+}
+
+async function resolveNextQueuedFollowupSendAt(
+  auth: AuthContext,
+  sequenceId: string,
+): Promise<string | null> {
+  const { data, error } = await auth.client
+    .from("followup_messages")
+    .select("scheduled_at")
+    .eq("sequence_id", sequenceId)
+    .eq("status", "queued")
+    .order("scheduled_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new HttpError(500, "internal_error", "Failed to resolve next queued follow-up message.");
+  }
+
+  return data && typeof data.scheduled_at === "string" ? data.scheduled_at : null;
+}
+
+async function updateFollowupSequenceNextSendAt(
+  auth: AuthContext,
+  sequenceId: string,
+  nextSendAt: string | null,
+): Promise<void> {
+  const { error } = await auth.client
+    .from("followup_sequences")
+    .update({ next_send_at: nextSendAt })
+    .eq("id", sequenceId)
+    .eq("organization_id", auth.organizationId);
+
+  if (error) {
+    throw new HttpError(500, "internal_error", "Failed to update follow-up sequence next_send_at.");
+  }
+}
+
+async function cancelQueuedFollowupMessages(
+  auth: AuthContext,
+  sequenceId: string,
+  reason: string,
+): Promise<void> {
+  const { error } = await auth.client
+    .from("followup_messages")
+    .update({
+      status: "canceled",
+      error_message: reason,
+    })
+    .eq("sequence_id", sequenceId)
+    .eq("status", "queued");
+
+  if (error) {
+    throw new HttpError(500, "internal_error", "Failed to cancel queued follow-up messages.");
+  }
 }
 
 function jsonResponse(payload: ApiSuccess | ApiError, status = 200): Response {
@@ -408,6 +503,18 @@ Deno.serve(async (request: Request) => {
       }
 
       if (mutation.type === "insert") {
+        if (mutation.entity === "job") {
+          const validationError = validateJobPayload(mutation.payload);
+          if (validationError != null) {
+            await recordSyncMutation(auth, mutation, entityId, true, validationError);
+            conflictList.push({
+              client_mutation_id: mutation.client_mutation_id,
+              reason: validationError,
+            });
+            continue;
+          }
+        }
+
         const insertPayload: Record<string, unknown> = {
           ...mutation.payload,
           organization_id: auth.organizationId,
@@ -483,6 +590,31 @@ Deno.serve(async (request: Request) => {
           reason,
         });
         continue;
+      }
+
+      if (mutation.entity === "job") {
+        const validationError = validateJobPayload(mutation.payload);
+        if (validationError != null) {
+          await recordSyncMutation(auth, mutation, entityId, true, validationError);
+          conflictList.push({
+            client_mutation_id: mutation.client_mutation_id,
+            reason: validationError,
+          });
+          continue;
+        }
+
+        if (typeof mutation.payload.phase === "string") {
+          const currentPhase = typeof currentRow.phase === "string" ? currentRow.phase : "";
+          if (!isValidJobPhaseTransition(currentPhase, mutation.payload.phase)) {
+            const reason = `Job phase transition is invalid: '${currentPhase}' -> '${mutation.payload.phase}'.`;
+            await recordSyncMutation(auth, mutation, entityId, true, reason);
+            conflictList.push({
+              client_mutation_id: mutation.client_mutation_id,
+              reason,
+            });
+            continue;
+          }
+        }
       }
 
       const nextStatusRaw = mutation.payload.status;
@@ -569,6 +701,40 @@ Deno.serve(async (request: Request) => {
         });
       }
 
+      let followupSequenceState: string | null = null;
+      if (mutation.entity === "followup_sequence" && typeof updatePatch.state === "string") {
+        if (!FOLLOWUP_SEQUENCE_STATES.has(updatePatch.state)) {
+          const reason = `Unsupported follow-up sequence state '${updatePatch.state}'.`;
+          await recordSyncMutation(auth, mutation, entityId, true, reason);
+          conflictList.push({
+            client_mutation_id: mutation.client_mutation_id,
+            reason,
+          });
+          continue;
+        }
+
+        followupSequenceState = updatePatch.state;
+        const nowIso = new Date().toISOString();
+
+        if (followupSequenceState === "active") {
+          updatePatch.paused_at = null;
+          updatePatch.stopped_at = null;
+          updatePatch.completed_at = null;
+        } else if (followupSequenceState === "paused") {
+          updatePatch.paused_at = nowIso;
+          updatePatch.stopped_at = null;
+          updatePatch.completed_at = null;
+          updatePatch.next_send_at = null;
+        } else if (followupSequenceState === "stopped") {
+          updatePatch.stopped_at = nowIso;
+          updatePatch.completed_at = null;
+          updatePatch.next_send_at = null;
+        } else if (followupSequenceState === "completed") {
+          updatePatch.completed_at = nowIso;
+          updatePatch.next_send_at = null;
+        }
+      }
+
       if (config.isVersioned && currentVersion != null) {
         updatePatch.version = currentVersion + 1;
       }
@@ -582,6 +748,23 @@ Deno.serve(async (request: Request) => {
 
         if (updateError) {
           throw new HttpError(500, "internal_error", `Failed to update ${mutation.entity}.`);
+        }
+      }
+
+      if (mutation.entity === "followup_sequence" && followupSequenceState != null) {
+        if (followupSequenceState === "stopped" || followupSequenceState === "completed") {
+          await cancelQueuedFollowupMessages(
+            auth,
+            entityId,
+            `Sequence ${followupSequenceState} by user action.`,
+          );
+        }
+
+        if (followupSequenceState === "active") {
+          const nextSendAt = await resolveNextQueuedFollowupSendAt(auth, entityId);
+          await updateFollowupSequenceNextSendAt(auth, entityId, nextSendAt);
+        } else {
+          await updateFollowupSequenceNextSendAt(auth, entityId, null);
         }
       }
 

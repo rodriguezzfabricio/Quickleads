@@ -6,6 +6,11 @@ import {
   readOptionalString,
   readRequiredUuid,
 } from "../_shared/validation.ts";
+import {
+  buildFollowupSchedule,
+  localDateIso,
+  normalizeTimezone,
+} from "../_shared/followup_schedule.ts";
 
 type ErrorCode =
   | "method_not_allowed"
@@ -13,7 +18,7 @@ type ErrorCode =
   | "unauthorized"
   | "forbidden"
   | "not_found"
-  | "not_implemented"
+  | "conflict"
   | "internal_error";
 
 interface ApiError {
@@ -42,7 +47,16 @@ interface EstimateSentRequest {
   trigger_source?: "manual" | "sent_from_another_tool";
 }
 
+interface LeadRow {
+  id: string;
+  organization_id: string;
+  status: string;
+  version: number;
+}
+
 const TRIGGER_SOURCES = new Set(["manual", "sent_from_another_tool"] as const);
+const TERMINAL_LEAD_STATUSES = new Set(["won", "cold"]);
+const MAX_VERSION_RETRIES = 3;
 
 function jsonResponse(payload: ApiSuccess | ApiError, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -69,6 +83,204 @@ function parseEstimateSentRequest(input: Record<string, unknown>): EstimateSentR
   };
 }
 
+function toInteger(value: unknown): number {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isInteger(parsed)) {
+      return parsed;
+    }
+  }
+
+  throw new HttpError(500, "internal_error", "Lead version is invalid.");
+}
+
+async function resolveLead(
+  auth: Awaited<ReturnType<typeof requireAuthContext>>,
+  leadId: string,
+): Promise<LeadRow> {
+  const { data, error } = await auth.client
+    .from("leads")
+    .select("id, organization_id, status, version")
+    .eq("id", leadId)
+    .eq("organization_id", auth.organizationId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) {
+    throw new HttpError(500, "internal_error", "Failed to resolve lead for estimate_sent update.");
+  }
+
+  if (!data || typeof data.id !== "string") {
+    throw new HttpError(404, "not_found", "Lead was not found in the authenticated organization.");
+  }
+
+  const status = typeof data.status === "string" ? data.status : "";
+  if (TERMINAL_LEAD_STATUSES.has(status)) {
+    throw new HttpError(409, "conflict", `Cannot mark estimate sent for a terminal lead status ('${status}').`);
+  }
+
+  return {
+    id: data.id,
+    organization_id: auth.organizationId,
+    status,
+    version: toInteger(data.version),
+  };
+}
+
+async function markLeadEstimateSent(
+  auth: Awaited<ReturnType<typeof requireAuthContext>>,
+  leadId: string,
+  estimateSentAtIso: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < MAX_VERSION_RETRIES; attempt += 1) {
+    const current = await resolveLead(auth, leadId);
+    const nextVersion = current.version + 1;
+
+    const { data: updated, error: updateError } = await auth.client
+      .from("leads")
+      .update({
+        status: "estimate_sent",
+        followup_state: "active",
+        estimate_sent_at: estimateSentAtIso,
+        version: nextVersion,
+      })
+      .eq("id", current.id)
+      .eq("organization_id", current.organization_id)
+      .eq("version", current.version)
+      .select("id")
+      .maybeSingle();
+
+    if (updateError) {
+      throw new HttpError(500, "internal_error", "Failed to persist lead estimate_sent update.");
+    }
+
+    if (updated?.id) {
+      return;
+    }
+  }
+
+  throw new HttpError(409, "conflict", "Lead was modified by another update. Retry the request.");
+}
+
+async function resolveTimezone(
+  auth: Awaited<ReturnType<typeof requireAuthContext>>,
+): Promise<string> {
+  const { data, error } = await auth.client
+    .from("organizations")
+    .select("timezone")
+    .eq("id", auth.organizationId)
+    .maybeSingle();
+
+  if (error) {
+    throw new HttpError(500, "internal_error", "Failed to resolve organization timezone.");
+  }
+
+  if (!data || typeof data.timezone !== "string") {
+    return "America/New_York";
+  }
+
+  return normalizeTimezone(data.timezone);
+}
+
+async function ensureFollowupSequence(
+  auth: Awaited<ReturnType<typeof requireAuthContext>>,
+  leadId: string,
+  estimateSentAtIso: string,
+  timezone: string,
+): Promise<string> {
+  const schedule = buildFollowupSchedule(estimateSentAtIso, timezone);
+  const earliestScheduledAt = schedule
+    .map((entry) => entry.scheduledAt)
+    .sort()[0] ?? null;
+
+  const { data: sequence, error: sequenceError } = await auth.client
+    .from("followup_sequences")
+    .upsert(
+      {
+        organization_id: auth.organizationId,
+        lead_id: leadId,
+        state: "active",
+        start_date_local: localDateIso(estimateSentAtIso, timezone),
+        timezone,
+        next_send_at: earliestScheduledAt,
+        paused_at: null,
+        stopped_at: null,
+        completed_at: null,
+      },
+      { onConflict: "lead_id" },
+    )
+    .select("id")
+    .maybeSingle();
+
+  if (sequenceError) {
+    throw new HttpError(500, "internal_error", "Failed to create follow-up sequence.");
+  }
+
+  if (!sequence || typeof sequence.id !== "string") {
+    throw new HttpError(500, "internal_error", "Follow-up sequence upsert did not return an id.");
+  }
+
+  const messageRows = schedule.map((entry) => ({
+    sequence_id: sequence.id,
+    step_number: entry.stepNumber,
+    channel: entry.channel,
+    template_key: entry.templateKey,
+    scheduled_at: entry.scheduledAt,
+    status: "queued",
+    sent_at: null,
+    retry_count: 0,
+    provider_message_id: null,
+    error_message: null,
+  }));
+
+  const { error: messageError } = await auth.client
+    .from("followup_messages")
+    .upsert(messageRows, { onConflict: "sequence_id,step_number,channel" });
+
+  if (messageError) {
+    throw new HttpError(500, "internal_error", "Failed to enqueue follow-up messages.");
+  }
+
+  return sequence.id;
+}
+
+async function refreshSequenceNextSendAt(
+  auth: Awaited<ReturnType<typeof requireAuthContext>>,
+  sequenceId: string,
+): Promise<void> {
+  const { data: nextMessage, error: nextMessageError } = await auth.client
+    .from("followup_messages")
+    .select("scheduled_at")
+    .eq("sequence_id", sequenceId)
+    .eq("status", "queued")
+    .order("scheduled_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (nextMessageError) {
+    throw new HttpError(500, "internal_error", "Failed to resolve sequence next_send_at.");
+  }
+
+  const nextSendAt =
+    nextMessage && typeof nextMessage.scheduled_at === "string"
+      ? nextMessage.scheduled_at
+      : null;
+
+  const { error: updateError } = await auth.client
+    .from("followup_sequences")
+    .update({ next_send_at: nextSendAt })
+    .eq("id", sequenceId)
+    .eq("organization_id", auth.organizationId);
+
+  if (updateError) {
+    throw new HttpError(500, "internal_error", "Failed to update sequence next_send_at.");
+  }
+}
+
 function mapError(error: unknown): { status: number; body: ApiError } {
   if (error instanceof ValidationError) {
     return {
@@ -91,7 +303,9 @@ function mapError(error: unknown): { status: number; body: ApiError } {
           ? "forbidden"
           : error.status === 404
             ? "not_found"
-            : "internal_error";
+            : error.status === 409
+              ? "conflict"
+              : "internal_error";
 
     return {
       status: error.status,
@@ -136,41 +350,29 @@ Deno.serve(async (request: Request) => {
     const body = await parseJsonObject(request);
     const payload = parseEstimateSentRequest(body);
 
-    const { data: lead, error: leadLookupError } = await auth.client
-      .from("leads")
-      .select("id")
-      .eq("id", payload.lead_id)
-      .eq("organization_id", auth.organizationId)
-      .is("deleted_at", null)
-      .maybeSingle();
+    const estimateSentAtIso = payload.estimate_sent_at ?? new Date().toISOString();
 
-    if (leadLookupError) {
-      throw new HttpError(500, "internal_error", "Failed to verify lead ownership for this organization.");
-    }
+    await markLeadEstimateSent(auth, payload.lead_id, estimateSentAtIso);
 
-    if (!lead) {
-      throw new HttpError(404, "not_found", "Lead was not found in the authenticated organization.");
-    }
-
-    // --- SCAFFOLD-ONLY: no persistence logic yet ---
-    // TODO(PHASE-1-domain-transition): Persist lead status → "estimate-sent" and
-    //   estimate_sent_at timestamp with version-safe optimistic writes.
-    // TODO(PHASE-3-followup-scheduler): After status write succeeds, create
-    //   follow-up sequence row and enqueue day 2/5/10 messages via Twilio/Resend.
-    // TODO(PHASE-1-domain-transition): On success, return 200 with EstimateSentData.
-
-    return jsonResponse(
-      {
-        ok: false,
-        error: {
-          code: "not_implemented",
-          message:
-            "leads-estimate-sent is scaffold-only and not production-ready. " +
-            "Auth and validation passed but no data was persisted.",
-        },
-      },
-      501,
+    const timezone = await resolveTimezone(auth);
+    const sequenceId = await ensureFollowupSequence(
+      auth,
+      payload.lead_id,
+      estimateSentAtIso,
+      timezone,
     );
+
+    await refreshSequenceNextSendAt(auth, sequenceId);
+
+    return jsonResponse({
+      ok: true,
+      data: {
+        lead_id: payload.lead_id,
+        organization_id: auth.organizationId,
+        estimate_sent_at: estimateSentAtIso,
+        accepted: true,
+      },
+    });
   } catch (error) {
     const mappedError = mapError(error);
     return jsonResponse(mappedError.body, mappedError.status);

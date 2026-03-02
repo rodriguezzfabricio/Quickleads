@@ -1,8 +1,14 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/constants/app_tokens.dart';
+import '../../core/platform/call_detector_android.dart';
+import '../../core/platform/call_detector_ios.dart';
+import '../../core/constants/app_runtime_flags.dart';
+import '../../core/notifications/notification_service.dart';
 import '../../core/storage/providers.dart';
 import '../../features/auth/confirm_email_screen.dart';
 import '../../features/auth/magic_link_screen.dart';
@@ -21,9 +27,11 @@ import '../../features/jobs/jobs_screen.dart';
 import '../../features/leads/lead_capture_screen.dart';
 import '../../features/leads/lead_detail_screen.dart';
 import '../../features/leads/leads_screen.dart';
+import '../../features/onboarding/permissions_screen.dart';
 import '../../features/onboarding/workspace_setup_screen.dart';
 import '../../features/projects/project_creation_screen.dart';
 import '../../features/settings/settings_screen.dart';
+import '../../shared/widgets/bottom_nav.dart';
 
 class AppRoutes {
   static const home = '/';
@@ -44,6 +52,8 @@ class AppRoutes {
   static const dailySweepReview = '/daily-sweep-review';
   static const followups = '/followups';
   static const followupSettings = '/follow-up-settings';
+  static const permissions = '/onboarding/permissions';
+  static const importData = '/import';
   static const onboarding = '/onboarding';
   static const settings = '/settings';
 }
@@ -172,6 +182,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           isCreateFlow: true,
           prefillName: state.uri.queryParameters['name'],
           prefillPhone: state.uri.queryParameters['phone'],
+          prefillLeadId: state.uri.queryParameters['leadId'],
         ),
       ),
       GoRoute(
@@ -202,6 +213,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const FollowupSettingsScreen(),
       ),
       GoRoute(
+          path: AppRoutes.permissions,
+          builder: (_, __) => const PermissionsScreen()),
+      GoRoute(
+          path: AppRoutes.importData,
+          builder: (_, __) => const DataImportScreen()),
+      GoRoute(
           path: AppRoutes.onboarding,
           builder: (_, __) => const DataImportScreen()),
       GoRoute(
@@ -220,288 +237,117 @@ class _AppShell extends ConsumerStatefulWidget {
 }
 
 class _AppShellState extends ConsumerState<_AppShell> {
-  Future<void> _openCreateSheet() async {
+  final _androidCallDetector = CallDetectorAndroid();
+  CallDetectorIos? _iosCallDetector;
+  StreamSubscription<String>? _notificationTapSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_initializeOrchestration());
+  }
+
+  @override
+  void dispose() {
+    _androidCallDetector.dispose();
+    _iosCallDetector?.dispose();
+    _notificationTapSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initializeOrchestration() async {
+    ref.read(syncEngineProvider);
+    await NotificationService.instance.scheduleDailySweepReminder();
+
+    _notificationTapSubscription =
+        NotificationService.instance.tapPayloadStream.listen(
+      _handleNotificationPayload,
+    );
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await _androidCallDetector.start(ref);
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      _iosCallDetector = CallDetectorIos(
+        onLikelyCallDetected: _showIosCallPrompt,
+      )..start();
+    }
+  }
+
+  Future<void> _showIosCallPrompt() async {
+    if (!mounted) {
+      return;
+    }
+
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        final theme = Theme.of(sheetContext);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF141417),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.1),
-                ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Were you just on a call?',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Create',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.outline,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _CreateActionButton(
-                    label: '+ New Lead',
-                    icon: Icons.phone_outlined,
-                    tint: AppTokens.primary,
-                    onPressed: () {
-                      Navigator.of(sheetContext).pop();
-                      context.push(AppRoutes.leadCapture);
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  _CreateActionButton(
-                    label: '+ New Project',
-                    icon: Icons.assignment_outlined,
-                    tint: AppTokens.success,
-                    onPressed: () {
-                      Navigator.of(sheetContext).pop();
-                      context.push(AppRoutes.projectCreate);
-                    },
-                  ),
-                ],
+              const SizedBox(height: 8),
+              Text(
+                'Save the number as a lead if it was a new client call.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Theme.of(context).colorScheme.outline),
               ),
-            ),
+              const SizedBox(height: 14),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  this.context.push(AppRoutes.leadCapture);
+                },
+                child: const Text('Yes, enter number'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('No'),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
+  }
+
+  void _handleNotificationPayload(String payload) {
+    if (!mounted || !payload.startsWith('route:')) {
+      return;
+    }
+    final route = payload.substring('route:'.length);
+    if (route.isNotEmpty) {
+      context.push(route);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final orgId = ref.watch(authProvider).valueOrNull?.profile?.organizationId;
-    if (orgId != null && orgId.isNotEmpty) {
+    if (AppRuntimeFlags.enableDebugMockSeed &&
+        orgId != null &&
+        orgId.isNotEmpty) {
       ref.watch(debugMockDataSeedProvider(orgId));
     }
 
     return Scaffold(
       body: widget.navigationShell,
-      bottomNavigationBar: _ShellBottomNav(
+      bottomNavigationBar: BottomNav(
         selectedIndex: widget.navigationShell.currentIndex,
-        onSelectIndex: (index) {
+        onSelect: (index) {
           widget.navigationShell.goBranch(
             index,
             initialLocation: index == widget.navigationShell.currentIndex,
           );
         },
-        onCreatePressed: _openCreateSheet,
-      ),
-    );
-  }
-}
-
-class _ShellBottomNav extends StatelessWidget {
-  const _ShellBottomNav({
-    required this.selectedIndex,
-    required this.onSelectIndex,
-    required this.onCreatePressed,
-  });
-
-  final int selectedIndex;
-  final ValueChanged<int> onSelectIndex;
-  final VoidCallback onCreatePressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.62),
-        border: Border(
-          top: BorderSide(
-            color: Colors.white.withValues(alpha: 0.06),
-          ),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 82,
-          child: Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _ShellNavItem(
-                        icon: Icons.home_outlined,
-                        selectedIcon: Icons.home_rounded,
-                        label: 'Home',
-                        selected: selectedIndex == 0,
-                        onTap: () => onSelectIndex(0),
-                      ),
-                    ),
-                    Expanded(
-                      child: _ShellNavItem(
-                        icon: Icons.groups_outlined,
-                        selectedIcon: Icons.groups,
-                        label: 'Leads',
-                        selected: selectedIndex == 1,
-                        onTap: () => onSelectIndex(1),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Transform.translate(
-                  offset: const Offset(0, -8),
-                  child: GestureDetector(
-                    onTap: onCreatePressed,
-                    child: Container(
-                      width: 58,
-                      height: 58,
-                      decoration: BoxDecoration(
-                        color: AppTokens.primary,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: const Color(0xFF0A0A0A),
-                          width: 3,
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color.fromRGBO(0, 122, 255, 0.4),
-                            blurRadius: 16,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.add_rounded,
-                        size: 34,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _ShellNavItem(
-                        icon: Icons.account_circle_outlined,
-                        selectedIcon: Icons.account_circle,
-                        label: 'Clients',
-                        selected: selectedIndex == 2,
-                        onTap: () => onSelectIndex(2),
-                      ),
-                    ),
-                    Expanded(
-                      child: _ShellNavItem(
-                        icon: Icons.work_outline,
-                        selectedIcon: Icons.work,
-                        label: 'Jobs',
-                        selected: selectedIndex == 3,
-                        onTap: () => onSelectIndex(3),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ShellNavItem extends StatelessWidget {
-  const _ShellNavItem({
-    required this.icon,
-    required this.selectedIcon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final IconData selectedIcon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tint =
-        selected ? AppTokens.primary : Colors.white.withValues(alpha: 0.35);
-    final iconData = selected ? selectedIcon : icon;
-
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(iconData, size: 23, color: tint),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                color: tint,
-                fontSize: 10,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CreateActionButton extends StatelessWidget {
-  const _CreateActionButton({
-    required this.label,
-    required this.icon,
-    required this.tint,
-    required this.onPressed,
-  });
-
-  final String label;
-  final IconData icon;
-  final Color tint;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: tint.withValues(alpha: 0.15),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onPressed,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: tint.withValues(alpha: 0.35)),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, size: 22, color: tint),
-              const SizedBox(width: 10),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ],
-          ),
-        ),
+        onCreateLead: () => context.push(AppRoutes.leadCapture),
+        onCreateProject: () => context.push(AppRoutes.projectCreate),
       ),
     );
   }

@@ -1,14 +1,14 @@
-import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 class AppTokens {
-  static const background = Color(0xFF161618);
-  static const foreground = Color(0xFFF5F5F7);
-  static const primary = Color(0xFF007AFF);
-  static const success = Color(0xFF4A9E7E);
-  static const warning = Color(0xFFFF9F0A);
-  static const danger = Color(0xFFFF453A);
+  static const background = AppColors.background;
+  static const foreground = AppColors.foreground;
+  static const primary = AppColors.systemBlue;
+  static const success = AppColors.systemGreen;
+  static const warning = AppColors.systemOrange;
+  static const danger = AppColors.systemRed;
 
-  static const glass = Color.fromRGBO(255, 255, 255, 0.04);
-  static const glassElevated = Color.fromRGBO(255, 255, 255, 0.08);
-  static const glassBorder = Color.fromRGBO(255, 255, 255, 0.08);
+  static const glass = AppColors.glassBase;
+  static const glassElevated = AppColors.glassElevated;
+  static const glassBorder = AppColors.glassBorder;
 }

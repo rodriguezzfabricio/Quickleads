@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../storage/app_database.dart';
+import '../services/photo_upload_service.dart';
 import 'device_registration_service.dart';
 import 'sync_status.dart';
 
@@ -20,13 +21,16 @@ class SyncEngine {
     required this.db,
     required this.supabaseClient,
     required this.deviceRegistrationService,
+    required this.photoUploadService,
   });
 
   final AppDatabase db;
   final SupabaseClient supabaseClient;
   final DeviceRegistrationService deviceRegistrationService;
+  final PhotoUploadService photoUploadService;
 
   final _statusController = StreamController<SyncStatus>.broadcast();
+  final _diagnosticsController = StreamController<SyncDiagnostics>.broadcast();
   final Connectivity _connectivity = Connectivity();
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
@@ -36,14 +40,22 @@ class SyncEngine {
   /// Stream of sync status for UI indicators.
   Stream<SyncStatus> get statusStream => _statusController.stream;
 
+  /// Stream of detailed sync diagnostics for Settings.
+  Stream<SyncDiagnostics> get diagnosticsStream =>
+      _diagnosticsController.stream;
+
   /// Current status (last emitted value).
   SyncStatus _currentStatus = SyncStatus.idle;
   SyncStatus get currentStatus => _currentStatus;
+
+  SyncDiagnostics _diagnostics = const SyncDiagnostics();
+  SyncDiagnostics get diagnostics => _diagnostics;
 
   // ── Lifecycle ────────────────────────────────────────────────────
 
   /// Start listening to connectivity changes and schedule periodic sync.
   void startListening() {
+    _emitDiagnostics(_diagnostics);
     _connectivitySub = _connectivity.onConnectivityChanged.listen(
       _onConnectivityChanged,
     );
@@ -63,6 +75,7 @@ class SyncEngine {
     _connectivitySub?.cancel();
     _periodicTimer?.cancel();
     _statusController.close();
+    _diagnosticsController.close();
   }
 
   // ── Manual Trigger ───────────────────────────────────────────────
@@ -71,32 +84,94 @@ class SyncEngine {
   Future<SyncResult> syncNow() async {
     if (_isSyncing) return SyncResult.success();
 
+    final attemptedAt = DateTime.now();
+
     // Check connectivity first.
     final connectivityResults = await _connectivity.checkConnectivity();
     if (connectivityResults.contains(ConnectivityResult.none)) {
       _emitStatus(SyncStatus.offline);
-      return SyncResult.offline();
+      final result = SyncResult.offline(
+        attemptedAt: attemptedAt,
+        completedAt: DateTime.now(),
+      );
+      _recordResult(result);
+      return result;
     }
 
     _isSyncing = true;
     _emitStatus(SyncStatus.syncing);
 
-    try {
-      final pushResult = await _pushPendingMutations();
-      final pullResult = await _pullServerChanges();
+    var pushResult = const SyncResult(status: SyncStatus.idle);
+    var pullResult = const SyncResult(status: SyncStatus.idle);
+    String? pushError;
+    String? pushErrorCode;
+    String? pullError;
+    String? pullErrorCode;
 
-      final result = SyncResult.success(
+    try {
+      try {
+        pushResult = await _pushPendingMutations();
+        pushError = pushResult.pushErrorMessage ?? pushResult.errorMessage;
+        pushErrorCode = pushResult.pushErrorCode ?? pushResult.errorCode;
+      } catch (error) {
+        final details = _extractErrorDetails(error);
+        pushError = details.$1;
+        pushErrorCode = details.$2;
+      }
+
+      try {
+        await _uploadPendingPhotos();
+      } catch (error) {
+        final details = _extractErrorDetails(error);
+        final uploadError = 'Photo upload failed: ${details.$1}';
+        pushError =
+            pushError == null ? uploadError : '$pushError | $uploadError';
+        pushErrorCode ??= details.$2 ?? 'photo_upload_failed';
+      }
+
+      try {
+        pullResult = await _pullServerChanges();
+        pullError = pullResult.pullErrorMessage ?? pullResult.errorMessage;
+        pullErrorCode = pullResult.pullErrorCode ?? pullResult.errorCode;
+      } catch (error) {
+        final details = _extractErrorDetails(error);
+        pullError = details.$1;
+        pullErrorCode = details.$2;
+      }
+
+      final hasErrors =
+          (pushError?.isNotEmpty ?? false) || (pullError?.isNotEmpty ?? false);
+      final completedAt = DateTime.now();
+      final result = SyncResult(
+        status: hasErrors ? SyncStatus.error : SyncStatus.idle,
         pushedCount: pushResult.pushedCount,
         pulledCount: pullResult.pulledCount,
         conflictCount: pushResult.conflictCount,
+        errorMessage: _mergeErrors(pushError, pullError),
+        errorCode: _mergeErrorCodes(pushErrorCode, pullErrorCode),
+        pushErrorMessage: pushError,
+        pushErrorCode: pushErrorCode,
+        pullErrorMessage: pullError,
+        pullErrorCode: pullErrorCode,
+        attemptedAt: attemptedAt,
+        completedAt: completedAt,
       );
 
-      _emitStatus(SyncStatus.idle);
+      _emitStatus(result.status);
+      _recordResult(result);
       return result;
-    } catch (e) {
-      debugPrint('SyncEngine error: $e');
+    } catch (error) {
+      final details = _extractErrorDetails(error);
+      debugPrint('SyncEngine error: ${details.$1}');
+      final result = SyncResult.error(
+        details.$1,
+        errorCode: details.$2,
+        attemptedAt: attemptedAt,
+        completedAt: DateTime.now(),
+      );
       _emitStatus(SyncStatus.error);
-      return SyncResult.error(e.toString());
+      _recordResult(result);
+      return result;
     } finally {
       _isSyncing = false;
     }
@@ -156,10 +231,20 @@ class SyncEngine {
       final data = response.data as Map<String, dynamic>?;
 
       if (data == null || data['ok'] != true) {
-        // Server returned an error — revert to pending for retry.
-        await _revertTooPending(ids);
+        final errorCode = _extractApiErrorCode(data);
+        if (errorCode == 'invalid_request') {
+          await _markFailed(ids);
+        } else {
+          // Transient server/network issue — retry later.
+          await _revertTooPending(ids);
+        }
         final errorMsg = data?['error']?['message'] ?? 'Unknown push error';
-        return SyncResult.error(errorMsg);
+        return SyncResult.error(
+          errorMsg,
+          errorCode: errorCode,
+          pushErrorMessage: errorMsg,
+          pushErrorCode: errorCode,
+        );
       }
 
       final applied = List<String>.from(data['data']?['applied'] ?? []);
@@ -210,14 +295,24 @@ class SyncEngine {
         pushedCount: applied.length,
         conflictCount: conflicts.length,
       );
-    } catch (e) {
-      // Network error — revert to pending for retry.
-      await _revertTooPending(ids);
+    } catch (error) {
+      final statusCode = _extractHttpStatus(error);
+      if (statusCode == 400) {
+        // Permanent local payload error — quarantine these rows.
+        await _markFailed(ids);
+      } else {
+        // Network/transient server issue — keep pending.
+        await _revertTooPending(ids);
+      }
       rethrow;
     }
   }
 
   // ── Pull ─────────────────────────────────────────────────────────
+
+  Future<void> _uploadPendingPhotos() async {
+    await photoUploadService.uploadPendingPhotos(supabaseClient);
+  }
 
   /// Pull server changes since our last cursor.
   Future<SyncResult> _pullServerChanges() async {
@@ -245,7 +340,13 @@ class SyncEngine {
 
         if (data == null || data['ok'] != true) {
           final errorMsg = data?['error']?['message'] ?? 'Unknown pull error';
-          return SyncResult.error(errorMsg);
+          final errorCode = _extractApiErrorCode(data);
+          return SyncResult.error(
+            errorMsg,
+            errorCode: errorCode,
+            pullErrorMessage: errorMsg,
+            pullErrorCode: errorCode,
+          );
         }
 
         final pullData = data['data'] as Map<String, dynamic>;
@@ -268,9 +369,15 @@ class SyncEngine {
         }
 
         if (changes.isEmpty) hasMore = false;
-      } catch (e) {
-        debugPrint('SyncEngine pull error: $e');
-        return SyncResult.error(e.toString());
+      } catch (error) {
+        final details = _extractErrorDetails(error);
+        debugPrint('SyncEngine pull error: ${details.$1}');
+        return SyncResult.error(
+          details.$1,
+          errorCode: details.$2,
+          pullErrorMessage: details.$1,
+          pullErrorCode: details.$2,
+        );
       }
     }
 
@@ -322,6 +429,7 @@ class SyncEngine {
                 leadId: Value(_optionalString(data, 'lead_id')),
                 clientName: Value(_requiredString(data, 'client_name')),
                 jobType: Value(_requiredString(data, 'job_type')),
+                notes: Value(_optionalString(data, 'notes')),
                 phase: Value(_requiredString(data, 'phase')),
                 healthStatus: Value(_requiredString(data, 'health_status')),
                 estimatedCompletionDate:
@@ -330,6 +438,42 @@ class SyncEngine {
                 createdAt: Value(_requiredDateTime(data, 'created_at')),
                 updatedAt: Value(_requiredDateTime(data, 'updated_at')),
                 deletedAt: Value(_optionalDateTime(data, 'deleted_at')),
+                needsSync: const Value(false),
+                lastSyncedAt: Value(syncedAt),
+              ),
+            );
+        break;
+      case 'client':
+        await db.into(db.localClients).insertOnConflictUpdate(
+              LocalClientsCompanion(
+                id: Value(_requiredString(data, 'id')),
+                organizationId: Value(_requiredString(data, 'organization_id')),
+                name: Value(_requiredString(data, 'name')),
+                phone: Value(_optionalString(data, 'phone')),
+                email: Value(_optionalString(data, 'email')),
+                address: Value(_optionalString(data, 'address')),
+                notes: Value(_optionalString(data, 'notes')),
+                sourceLeadId: Value(_optionalString(data, 'source_lead_id')),
+                projectCount: Value(_optionalInt(data, 'project_count') ?? 0),
+                version: Value(_optionalInt(data, 'version') ?? 1),
+                createdAt: Value(_requiredDateTime(data, 'created_at')),
+                updatedAt: Value(_requiredDateTime(data, 'updated_at')),
+                deletedAt: Value(_optionalDateTime(data, 'deleted_at')),
+                needsSync: const Value(false),
+                lastSyncedAt: Value(syncedAt),
+              ),
+            );
+        break;
+      case 'job_photo':
+        await db.into(db.localJobPhotos).insertOnConflictUpdate(
+              LocalJobPhotosCompanion(
+                id: Value(_requiredString(data, 'id')),
+                jobId: Value(_requiredString(data, 'job_id')),
+                organizationId: Value(_requiredString(data, 'organization_id')),
+                storagePath: Value(_optionalString(data, 'storage_path')),
+                takenAtSource: Value(_optionalString(data, 'taken_at_source')),
+                uploadedAt: Value(_optionalDateTime(data, 'uploaded_at')),
+                createdAt: Value(_requiredDateTime(data, 'created_at')),
                 needsSync: const Value(false),
                 lastSyncedAt: Value(syncedAt),
               ),
@@ -507,6 +651,110 @@ class SyncEngine {
         'Expected nullable ISO datetime string for key "$key" in sync payload.');
   }
 
+  String? _extractApiErrorCode(Map<String, dynamic>? payload) {
+    final errorRaw = payload?['error'];
+    if (errorRaw is Map) {
+      final mapped = Map<String, dynamic>.from(
+        errorRaw.map((key, value) => MapEntry(key.toString(), value)),
+      );
+      final code = mapped['code']?.toString().trim();
+      if (code != null && code.isNotEmpty) {
+        return code;
+      }
+    }
+    return null;
+  }
+
+  int? _extractHttpStatus(Object error) {
+    if (error is FunctionException) {
+      return error.status;
+    }
+    return null;
+  }
+
+  (String, String?) _extractErrorDetails(Object error) {
+    if (error is FunctionException) {
+      final code = _extractApiErrorCode(
+        error.details is Map
+            ? Map<String, dynamic>.from(
+                (error.details as Map).map(
+                  (key, value) => MapEntry(key.toString(), value),
+                ),
+              )
+            : null,
+      );
+      final messageFromDetails = error.details is Map
+          ? ((error.details as Map)['error'] is Map
+              ? ((error.details as Map)['error'] as Map)['message']
+                  ?.toString()
+                  .trim()
+              : null)
+          : null;
+      final fallback = error.toString();
+      final message =
+          (messageFromDetails != null && messageFromDetails.isNotEmpty)
+              ? messageFromDetails
+              : fallback;
+      final resolvedCode = code ?? 'http_${error.status}';
+      return (message, resolvedCode);
+    }
+    return (error.toString(), null);
+  }
+
+  String? _mergeErrors(String? pushError, String? pullError) {
+    final values = [pushError, pullError]
+        .whereType<String>()
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+    if (values.isEmpty) {
+      return null;
+    }
+    if (values.length == 1) {
+      return values.first;
+    }
+    return 'Push: ${values.first} | Pull: ${values.last}';
+  }
+
+  String? _mergeErrorCodes(String? pushCode, String? pullCode) {
+    final values = [pushCode, pullCode]
+        .whereType<String>()
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    if (values.isEmpty) {
+      return null;
+    }
+    if (values.length == 1) {
+      return values.first;
+    }
+    return values.join('|');
+  }
+
+  void _recordResult(SyncResult result) {
+    final completedAt = result.completedAt ?? DateTime.now();
+    final attemptedAt = result.attemptedAt ?? completedAt;
+    final succeeded = !result.hasErrors && result.status == SyncStatus.idle;
+
+    _emitDiagnostics(
+      SyncDiagnostics(
+        currentStatus: _currentStatus,
+        lastAttemptAt: attemptedAt,
+        lastCompletedAt: completedAt,
+        lastSuccessAt: succeeded ? completedAt : _diagnostics.lastSuccessAt,
+        lastPushedCount: result.pushedCount,
+        lastPulledCount: result.pulledCount,
+        lastConflictCount: result.conflictCount,
+        lastErrorMessage: result.errorMessage,
+        lastErrorCode: result.errorCode,
+        lastPushErrorMessage: result.pushErrorMessage,
+        lastPushErrorCode: result.pushErrorCode,
+        lastPullErrorMessage: result.pullErrorMessage,
+        lastPullErrorCode: result.pullErrorCode,
+      ),
+    );
+  }
+
   void _onConnectivityChanged(List<ConnectivityResult> results) {
     if (results.contains(ConnectivityResult.none)) {
       _emitStatus(SyncStatus.offline);
@@ -521,14 +769,53 @@ class SyncEngine {
     if (!_statusController.isClosed) {
       _statusController.add(status);
     }
+    _emitDiagnostics(
+      SyncDiagnostics(
+        currentStatus: status,
+        lastAttemptAt: _diagnostics.lastAttemptAt,
+        lastCompletedAt: _diagnostics.lastCompletedAt,
+        lastSuccessAt: _diagnostics.lastSuccessAt,
+        lastPushedCount: _diagnostics.lastPushedCount,
+        lastPulledCount: _diagnostics.lastPulledCount,
+        lastConflictCount: _diagnostics.lastConflictCount,
+        lastErrorMessage: _diagnostics.lastErrorMessage,
+        lastErrorCode: _diagnostics.lastErrorCode,
+        lastPushErrorMessage: _diagnostics.lastPushErrorMessage,
+        lastPushErrorCode: _diagnostics.lastPushErrorCode,
+        lastPullErrorMessage: _diagnostics.lastPullErrorMessage,
+        lastPullErrorCode: _diagnostics.lastPullErrorCode,
+      ),
+    );
+  }
+
+  void _emitDiagnostics(SyncDiagnostics diagnostics) {
+    _diagnostics = diagnostics;
+    if (!_diagnosticsController.isClosed) {
+      _diagnosticsController.add(diagnostics);
+    }
   }
 
   Future<void> _revertTooPending(List<String> ids) async {
+    if (ids.isEmpty) {
+      return;
+    }
     // Use customStatement for the retry_count increment since Drift's
     // companion can't express column + 1 directly.
     await db.customStatement(
       'UPDATE pending_sync_actions '
       'SET status = \'pending\', retry_count = retry_count + 1 '
+      'WHERE id IN (${List.filled(ids.length, '?').join(', ')})',
+      ids,
+    );
+  }
+
+  Future<void> _markFailed(List<String> ids) async {
+    if (ids.isEmpty) {
+      return;
+    }
+    await db.customStatement(
+      'UPDATE pending_sync_actions '
+      'SET status = \'failed\', retry_count = retry_count + 1 '
       'WHERE id IN (${List.filled(ids.length, '?').join(', ')})',
       ids,
     );
@@ -580,6 +867,21 @@ class SyncEngine {
             lastSyncedAt: Value(now),
           ),
         );
+        break;
+      case 'client':
+        await (db.update(db.localClients)..where((c) => c.id.equals(entityId)))
+            .write(LocalClientsCompanion(
+          needsSync: const Value(false),
+          lastSyncedAt: Value(now),
+        ));
+        break;
+      case 'job_photo':
+        await (db.update(db.localJobPhotos)
+              ..where((photo) => photo.id.equals(entityId)))
+            .write(LocalJobPhotosCompanion(
+          needsSync: const Value(false),
+          lastSyncedAt: Value(now),
+        ));
         break;
     }
   }
